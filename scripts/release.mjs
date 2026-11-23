@@ -161,7 +161,8 @@ try {
   run('git', ['tag', '-d', tag]);
 } catch (e) { /* 不存在，正常 */ }
 run('git', ['tag', '-a', tag, '-m', 'Release ' + tag]);
-run('git', ['push', 'origin', 'HEAD', '--follow-tags', '--force']);
+run('git', ['push', 'origin', 'HEAD']);
+run('git', ['push', 'origin', tag, '--force']);
 ok('已推送 tag');
 
 /* 5. 创建 Release */
