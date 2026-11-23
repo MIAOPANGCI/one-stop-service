@@ -150,6 +150,33 @@ journalctl -u corp-portal -f
 
 注意 `portal.service` 里的 `Environment=PORT/HOST` 优先级高于 `config.json`，想统一在一处管理就把那两行注释掉。
 
+## 版本与更新
+
+版本号唯一来源是 `package.json` 的 `version` 字段，服务端读出来后会通过 `/api/ping` 和 `/api/state` 一起返回，页脚和设置面板底部都能看到当前版本。
+
+设置面板底部的「检查更新」会去 GitHub 查最新 Release：
+
+- 结果缓存 30 分钟，避免频繁请求把 GitHub 的匿名限额用光
+- 发现新版本时列出更新说明和安装包下载链接
+- 服务器不能访问外网时，启动加 `DISABLE_UPDATE_CHECK=1` 可以直接关掉这个功能
+
+### 发版流程
+
+```bash
+# 1. 改 package.json 里的 version，提交
+# 2. 一条命令：打包 → 打 tag → 建 Release → 上传安装包
+npm run release
+```
+
+只会打包 git 跟踪的文件，所以 `data/`、`config.json` 天然不会混进去。另外两个参数：
+
+```bash
+npm run release -- --dry              # 只打包，不发到远端
+npm run release -- --notes "修了 xxx"  # 自定义更新说明（默认取最近提交）
+```
+
+凭据优先读 `GITHUB_TOKEN` 环境变量，没有就用 git 里已经存好的。
+
 ## 安全说明
 
 - 密码用 scrypt 加盐哈希，导出数据时自动剔除哈希字段
