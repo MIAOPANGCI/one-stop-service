@@ -1117,16 +1117,37 @@ const server = http.createServer(function (req, res) {
         // 先把响应发出去，再退出进程，让后台脚本接手替换和重启
         setTimeout(function () {
           try { persist(true); } catch (e) {}
+
+          const bootLog = path.join(DATA_DIR, 'update-boot.log');
+          let left = false;
+          const leave = function () {
+            if (left) return;
+            left = true;
+            setTimeout(function () { process.exit(0); }, 350);
+          };
+
           try {
+            // 子进程的输出要留住，它要是起不来，这是唯一的线索
+            const fd = fs.openSync(bootLog, 'a');
             const child = require('child_process').spawn(process.execPath, [r.runner], {
               cwd: DATA_DIR,
               detached: true,
-              stdio: 'ignore',
+              stdio: ['ignore', fd, fd],
               windowsHide: true
             });
+            child.on('spawn', leave);
+            child.on('error', function (e) {
+              try { fs.appendFileSync(bootLog, '\n[spawn error] ' + e.message + '\n'); } catch (_) {}
+              leave();
+            });
             child.unref();
-          } catch (e) {}
-          process.exit(0);
+          } catch (e) {
+            try { fs.appendFileSync(bootLog, '\n[spawn throw] ' + e.message + '\n'); } catch (_) {}
+            leave();
+          }
+
+          // 万一 spawn 事件没来，也别把服务卡死
+          setTimeout(leave, 2500);
         }, 700);
       } catch (e) {
         deny(400, e.message || '更新失败');
