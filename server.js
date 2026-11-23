@@ -654,14 +654,13 @@ function unzipTo(buf, destDir) {
   });
 }
 
+/* 下载安装包：支持 UPDATE_PROXY 走代理，内网机器直连不通时用得上 */
 function httpsBinary(url, timeoutMs) {
   return new Promise(function (resolve, reject) {
     const u = new URL(url);
-    const req = https.get({
-      host: u.hostname,
-      path: u.pathname + u.search,
-      headers: { 'User-Agent': 'corp-portal/' + VERSION }
-    }, function (res) {
+    const headers = { 'User-Agent': 'corp-portal/' + VERSION };
+
+    const onRes = function (res) {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
         return httpsBinary(res.headers.location, timeoutMs).then(resolve, reject);
@@ -673,9 +672,50 @@ function httpsBinary(url, timeoutMs) {
       const chunks = [];
       res.on('data', function (c) { chunks.push(c); });
       res.on('end', function () { resolve(Buffer.concat(chunks)); });
-    });
+    };
+
+    const proxy = process.env.UPDATE_PROXY || '';
+
+    if (proxy) {
+      let pu;
+      try { pu = new URL(proxy); } catch (e) { return reject(new Error('UPDATE_PROXY 格式不对')); }
+
+      const conn = http.request({
+        host: pu.hostname,
+        port: pu.port || 80,
+        method: 'CONNECT',
+        path: u.hostname + ':443',
+        headers: { Host: u.hostname + ':443' }
+      });
+
+      conn.on('connect', function (res, socket) {
+        if (res.statusCode !== 200) {
+          socket.destroy();
+          return reject(new Error('代理返回 ' + res.statusCode));
+        }
+        const r = https.request({
+          host: u.hostname,
+          path: u.pathname + u.search,
+          headers: headers,
+          agent: false,
+          socket: socket,
+          servername: u.hostname
+        }, onRes);
+        r.setTimeout(timeoutMs, function () { r.destroy(); reject(new Error('下载超时')); });
+        r.on('error', reject);
+        r.end();
+      });
+
+      conn.on('error', reject);
+      conn.setTimeout(timeoutMs, function () { conn.destroy(); reject(new Error('代理连接超时')); });
+      conn.end();
+      return;
+    }
+
+    const req = https.request({ host: u.hostname, path: u.pathname + u.search, headers: headers }, onRes);
     req.setTimeout(timeoutMs, function () { req.destroy(); reject(new Error('下载超时')); });
     req.on('error', reject);
+    req.end();
   });
 }
 
