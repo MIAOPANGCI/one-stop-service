@@ -1259,14 +1259,26 @@ const server = http.createServer(function (req, res) {
           };
 
           try {
-            // 子进程的输出要留住，它要是起不来，这是唯一的线索
-            const fd = fs.openSync(bootLog, 'a');
-            const child = require('child_process').spawn(process.execPath, [r.runner], {
-              cwd: DATA_DIR,
-              detached: true,
-              stdio: ['ignore', fd, fd],
-              windowsHide: true
-            });
+            let child;
+
+            if (process.platform === 'win32') {
+              // Windows 上直接 spawn 的子进程会被父进程的退出带走，
+              // 借 cmd 的 start 拉起独立进程才活得下来
+              child = require('child_process').spawn(
+                'cmd.exe',
+                ['/c', 'start', '/b', process.execPath, r.runner],
+                { cwd: DATA_DIR, detached: true, stdio: 'ignore', windowsHide: true }
+              );
+            } else {
+              const fd = fs.openSync(bootLog, 'a');
+              child = require('child_process').spawn(process.execPath, [r.runner], {
+                cwd: DATA_DIR,
+                detached: true,
+                stdio: ['ignore', fd, fd],
+                windowsHide: true
+              });
+            }
+
             child.on('spawn', leave);
             child.on('error', function (e) {
               try { fs.appendFileSync(bootLog, '\n[spawn error] ' + e.message + '\n'); } catch (_) {}
