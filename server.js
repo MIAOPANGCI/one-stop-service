@@ -23,11 +23,22 @@
 'use strict';
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = __dirname;
+
+/* 版本号唯一来源是 package.json */
+const VERSION = (function () {
+  try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version || '0.0.0'; }
+  catch (e) { return '0.0.0'; }
+})();
+
+/* 更新检查指向的仓库 */
+const REPO_SLUG = 'MIAOPANGCI/one-stop-service';
+const UPDATE_TTL = 30 * 60 * 1000;   // 30 分钟内复用结果，避免打爆 GitHub 限流
 const DATA_DIR = path.join(ROOT, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'portal.json');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
@@ -428,6 +439,99 @@ function persist(skipBackup) {
 }
 
 /* ------------------------------------------------------------
+ * 更新检查：向 GitHub 要最新 Release，30 分钟内复用结果
+ * ---------------------------------------------------------- */
+let updateCache = { at: 0, data: null };
+let updateBusy = null;
+
+function cmpVersion(a, b) {
+  const pa = String(a || '0').split('-')[0].split('.');
+  const pb = String(b || '0').split('-')[0].split('.');
+  for (let i = 0; i < 3; i++) {
+    const x = parseInt(pa[i], 10) || 0;
+    const y = parseInt(pb[i], 10) || 0;
+    if (x !== y) return x > y ? 1 : -1;
+  }
+  return 0;
+}
+
+/* 只用固定地址，不接受外部传入，避免被当成 SSRF 跳板 */
+function httpsJson(url, timeoutMs) {
+  return new Promise(function (resolve) {
+    let done = false;
+    const finish = function (v) { if (!done) { done = true; resolve(v); } };
+
+    if (process.env.DISABLE_UPDATE_CHECK === '1') return finish({ disabled: true });
+
+    const req = https.get(url, {
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'corp-portal/' + VERSION
+      }
+    }, function (res) {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', function (c) { if (body.length < 200000) body += c; });
+      res.on('end', function () {
+        try { finish({ status: res.statusCode, data: JSON.parse(body) }); }
+        catch (e) { finish({ status: res.statusCode, data: null }); }
+      });
+    });
+
+    req.setTimeout(timeoutMs, function () { req.destroy(); finish(null); });
+    req.on('error', function () { finish(null); });
+  });
+}
+
+function checkUpdate(force) {
+  const now = Date.now();
+
+  if (!force && updateCache.data && now - updateCache.at < UPDATE_TTL) {
+    return Promise.resolve(updateCache.data);
+  }
+  if (updateBusy) return updateBusy;
+
+  updateBusy = httpsJson('https://api.github.com/repos/' + REPO_SLUG + '/releases/latest', 8000)
+    .then(function (r) {
+      const rel = r && r.data;
+      let out;
+
+      if (r && r.disabled) {
+        out = { ok: false, current: VERSION, reason: 'disabled', checkedAt: now };
+      } else if (!rel || !rel.tag_name) {
+        out = { ok: false, current: VERSION, reason: 'unreachable', checkedAt: now };
+      } else {
+        const latest = String(rel.tag_name).replace(/^v/i, '');
+        const asset = (rel.assets || [])[0];
+        out = {
+          ok: true,
+          current: VERSION,
+          latest: latest,
+          hasUpdate: cmpVersion(latest, VERSION) > 0,
+          name: rel.name || rel.tag_name,
+          publishedAt: rel.published_at || '',
+          notes: String(rel.body || '').slice(0, 4000),
+          url: rel.html_url || '',
+          download: asset ? asset.browser_download_url : '',
+          checkedAt: now
+        };
+      }
+
+      updateCache = { at: now, data: out };
+      return out;
+    })
+    .catch(function () {
+      return { ok: false, current: VERSION, reason: 'error', checkedAt: Date.now() };
+    })
+    .then(function (out) {
+      updateBusy = null;
+      return out;
+    });
+
+  return updateBusy;
+}
+
+/* ------------------------------------------------------------
  * 链接校验
  * ---------------------------------------------------------- */
 function sanitizeLink(input, base) {
@@ -643,7 +747,7 @@ const server = http.createServer(function (req, res) {
   const statePayload = function () {
     return {
       ok: true,
-      state: { settings: db.settings, links: db.links },
+      state: { settings: db.settings, links: db.links, version: VERSION },
       user: user ? publicUser(user) : null,
       roles: ROLE_LABEL
     };
@@ -657,7 +761,7 @@ const server = http.createServer(function (req, res) {
   if (pathname === '/api/ping' && method === 'GET') {
     const s = db.settings;
     sendJson(res, 200, {
-      ok: true, name: 'corp-portal', links: db.links.length,
+      ok: true, name: 'corp-portal', version: VERSION, links: db.links.length,
       users: db.users.length, requireLogin: s.requireLogin !== false,
       uptime: Math.round(process.uptime()),
       // 只暴露登录页需要的品牌信息，不含任何业务数据
@@ -722,6 +826,14 @@ const server = http.createServer(function (req, res) {
   }
 
   /* ---------- 当前用户 ---------- */
+  /* ---------- 检查更新 ---------- */
+  if (pathname === '/api/update/check' && method === 'GET') {
+    if (!user) return deny(401, '请先登录');
+    const force = /[?&]force=1/.test(req.url || '');
+    checkUpdate(force).then(function (d) { sendJson(res, 200, d); });
+    return;
+  }
+
   if (pathname === '/api/me' && method === 'GET') {
     if (!user) return deny(401, '未登录');
     sendJson(res, 200, { ok: true, user: publicUser(user) });

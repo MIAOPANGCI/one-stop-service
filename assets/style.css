@@ -2300,3 +2300,66 @@ html[data-theme="dark"] .upl-box.is-alpha {
 
 /* 透明底的图标不要那块渐变色，免得透出来 */
 .tile-ico.has-img { background: var(--card); }
+
+/* ===========================================================
+   版本号与更新检查
+   =========================================================== */
+.ver-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ver-tag {
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--ink-3);
+  font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: .02em;
+}
+
+.upd-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  background: var(--field);
+  color: var(--ink-2);
+}
+
+.upd-box.ok { background: #eef8f3; color: #1d7157; }
+.upd-box.new { background: #fff7e6; color: #8a5a00; }
+.upd-box.warn { background: #fdf0f0; color: #a3363b; }
+
+.upd-cur {
+  margin-left: 8px;
+  font-size: 11.5px;
+  opacity: .7;
+}
+
+.upd-notes {
+  margin: 8px 0;
+  max-height: 108px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 11.5px/1.65 ui-monospace, Menlo, Consolas, monospace;
+  opacity: .85;
+}
+
+.upd-link {
+  display: inline-block;
+  margin: 2px 14px 0 0;
+  color: var(--brand);
+  font-size: 12.5px;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--brand) 40%, transparent);
+}
+.upd-link:hover { border-bottom-color: var(--brand); }
+
+html[data-theme="dark"] .upd-box.ok { background: #16332d; color: #5fd6b8; }
+html[data-theme="dark"] .upd-box.new { background: #33270f; color: #f0b455; }
+html[data-theme="dark"] .upd-box.warn { background: #331a1d; color: #ff9ba2; }

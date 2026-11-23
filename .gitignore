@@ -4,6 +4,9 @@ data/
 config.json
 
 # ---------- 本地工具缓存 ----------
+# 调试用的临时浏览器 profile（会生成上千个文件）
+.etmp*/
+.release/
 .workbuddy/
 node_modules/
 npm-debug.log*

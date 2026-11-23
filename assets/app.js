@@ -53,7 +53,8 @@
       logo: '企', brandColor: '#2fa795', heroImage: '', heroFoot: '我们为你准备了丰富的内部服务',
       netMode: 'auto', probeUrls: [], openInNewTab: true, updatedAt: null
     },
-    links: []
+    links: [],
+    version: ''
   };
   var authUser = null;
   var roles = { admin: '管理员', editor: '编辑者', viewer: '浏览者' };
@@ -156,6 +157,7 @@
     if (data && data.state) {
       state.settings = Object.assign({}, state.settings, data.state.settings || {});
       state.links = Array.isArray(data.state.links) ? data.state.links : [];
+      if (data.state.version) state.version = data.state.version;
     }
     if (data && data.user !== undefined) authUser = data.user;
     if (data && data.roles) roles = data.roles;
@@ -530,7 +532,8 @@
   function renderFoot() {
     $('#footStat').textContent = '© ' + new Date().getFullYear() + ' ' + (state.settings.company || '');
     $('#footSync').textContent = online
-      ? ('数据存于服务端 · 最后更新 ' + fmtTime(state.settings.updatedAt))
+      ? ('数据存于服务端 · 最后更新 ' + fmtTime(state.settings.updatedAt) +
+         (state.version ? ' · v' + state.version : ''))
       : '未连接服务端';
   }
 
@@ -551,6 +554,7 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && typeof d.links === 'number') guestLinks = d.links;
+        if (d && d.version) state.version = d.version;
         if (d && d.site) {
           var s = state.settings;
           s.company = d.site.company || s.company;
@@ -968,12 +972,58 @@
     buildPalette();
     buildWallPresets();
 
+    if ($('#verTag')) $('#verTag').textContent = state.version ? 'v' + state.version : 'v—';
+    if ($('#updBox')) { $('#updBox').hidden = true; $('#updBox').className = 'upd-box'; }
+
     $('#serverInfo').textContent = online
       ? ('服务端已连接 · ' + state.links.length + ' 个服务 · 最后更新 ' + fmtTime(s.updatedAt) +
          (s.requireLogin === false ? ' · 游客可浏览' : ' · 需登录访问'))
       : '服务端未连接';
 
     openModal($('#setModal'));
+  }
+
+  /* ---------------- 检查更新 ---------------- */
+  function paintUpdate(d) {
+    var box = $('#updBox');
+    if (!box) return;
+    box.hidden = false;
+    box.className = 'upd-box';
+
+    if (!d || !d.ok) {
+      box.classList.add('warn');
+      box.textContent = d && d.reason === 'disabled'
+        ? '更新检查已被关闭（DISABLE_UPDATE_CHECK=1）'
+        : '暂时连不上更新服务，可能这台机器不能访问外网';
+      return;
+    }
+
+    if (d.hasUpdate) {
+      box.classList.add('new');
+      box.innerHTML =
+        '<b>发现新版本 v' + esc(d.latest) + '</b>' +
+        '<span class="upd-cur">当前 v' + esc(d.current) + '</span>' +
+        (d.notes ? '<pre class="upd-notes">' + esc(d.notes) + '</pre>' : '') +
+        (d.download ? '<a class="upd-link" href="' + esc(d.download) + '" target="_blank" rel="noopener">下载更新包</a>' : '') +
+        (d.url ? '<a class="upd-link" href="' + esc(d.url) + '" target="_blank" rel="noopener">查看更新说明</a>' : '');
+    } else {
+      box.classList.add('ok');
+      box.textContent = '已是最新版本 v' + d.current;
+    }
+  }
+
+  function checkUpdate() {
+    var btn = $('#checkUpdateBtn');
+    btn.disabled = true;
+    btn.textContent = '检查中…';
+    fetch('/api/update/check?force=1', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(paintUpdate)
+      .catch(function () { paintUpdate({ ok: false, reason: 'error' }); })
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = '检查更新';
+      });
   }
 
   function saveSettings() {
@@ -1398,6 +1448,7 @@
     /* 设置 */
     $('#settingsBtn').addEventListener('click', openSettings);
     $('#setSaveBtn').addEventListener('click', saveSettings);
+    $('#checkUpdateBtn').addEventListener('click', checkUpdate);
     $('#exportBtn').addEventListener('click', doExport);
     $('#importBtn').addEventListener('click', function () { $('#importFile').click(); });
     $('#importFile').addEventListener('change', function () {
