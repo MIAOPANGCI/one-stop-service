@@ -1,0 +1,48 @@
+# ============================================================
+# frp 客户端配置（内网穿透：把公司内网门户暴露到公网服务器）
+# ------------------------------------------------------------
+# 前置条件：
+#   1. 一台有公网 IP 的服务器，装好 frps（服务端）
+#   2. 公司内网一台常开的机器跑 frpc（本文件就是给它用的）
+#
+# 启动： frpc -c frpc.toml
+# 服务端 frps.toml 至少要有：
+#   bindPort = 7000
+#   auth.method = "token"
+#   auth.token = "这里和下面保持一致"
+# ============================================================
+
+serverAddr = "your-public-server.com"   # 公网服务器地址
+serverPort = 7000                        # frps 的 bindPort
+
+auth.method = "token"
+auth.token = "CHANGE-ME-to-a-long-random-string"
+
+log.to = "frpc.log"
+log.level = "info"
+log.maxDays = 7
+
+# 门户走 HTTP（公网服务器上用 Nginx 反代 + 上 HTTPS）
+[[proxies]]
+name = "corp-portal-http"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8080          # 公司内网跑门户的端口
+remotePort = 18080        # 公网服务器上的端口，Nginx 反代到它
+
+# 如果公网服务器装了 frps 的 vhostHTTPPort，也可以用 http 类型，
+# 由 frps 直接按域名分发，免去 remotePort 冲突的烦恼：
+# [[proxies]]
+# name = "corp-portal-vhost"
+# type = "http"
+# localIP = "127.0.0.1"
+# localPort = 8080
+# customDomains = ["portal.your-company.com"]
+
+# ---- 可选：把内网其他系统也一并穿透 ----
+# [[proxies]]
+# name = "corp-gitlab"
+# type = "tcp"
+# localIP = "192.168.1.30"
+# localPort = 8929
+# remotePort = 18929

@@ -1,0 +1,31 @@
+# ============================================================
+# Cloudflare Tunnel 配置（最省事的穿透方案，免公网 IP、免证书）
+# ------------------------------------------------------------
+#  1) 在装有 cloudflared 的机器上执行：
+#       cloudflared tunnel login
+#       cloudflared tunnel create corp-portal
+#       cloudflared tunnel route dns corp-portal portal.your-company.com
+#  2) 把生成的 credentials 文件路径填到下面
+#  3) 启动： cloudflared tunnel --config cloudflared-config.yml run
+#
+# 优点：不需要公网 IP，不用自己签证书，自动 HTTPS，自带访问控制入口。
+# 缺点：依赖 Cloudflare 账户，流量经其节点（企业敏感系统需评估合规）。
+# ============================================================
+
+tunnel: corp-portal
+credentials-file: C:\Users\YOUR-USER\.cloudflared\corp-portal.json
+
+ingress:
+  - hostname: portal.your-company.com
+    service: http://127.0.0.1:8080
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 15s
+
+  # 顺手把内网某个系统也映射出去
+  # - hostname: git.example.com
+  #   service: http://192.168.1.30:8929
+  #   originRequest:
+  #     noTLSVerify: true
+
+  - service: http_status:404

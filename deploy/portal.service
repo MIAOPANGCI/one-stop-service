@@ -1,0 +1,48 @@
+# ============================================================
+# Linux 下用 systemd 常驻运行门户服务
+# ------------------------------------------------------------
+#  1. 把项目放到 /opt/corp-portal
+#  2. 复制本文件： sudo cp deploy/portal.service /etc/systemd/system/corp-portal.service
+#  3. 按需修改下面的 User / 路径 / 口令
+#  4. 启用：
+#       sudo systemctl daemon-reload
+#       sudo systemctl enable --now corp-portal
+#       sudo systemctl status corp-portal
+#  5. 看日志： journalctl -u corp-portal -f
+# ============================================================
+
+[Unit]
+Description=Corp Portal - 企业门户快捷导航
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/corp-portal
+
+# 监听端口与监听地址（0.0.0.0 表示内网所有网卡均可访问）
+# 注意：这两行的优先级高于项目目录里的 config.json
+# 不想在这里写死的话，把这两行注释掉，改由 config.json 管理
+Environment=PORT=8080
+Environment=HOST=0.0.0.0
+
+# 初始管理员账号（只在第一次启动、数据库里还没有用户时生效）
+# 登录后请在页面右上角改密码，改完这里的值就不再起作用
+Environment=ADMIN_USER=admin
+Environment=ADMIN_PASSWORD=CHANGE-ME-please
+
+# 走 HTTPS 时打开，让会话 Cookie 带 Secure 标记
+# Environment=COOKIE_SECURE=1
+
+ExecStart=/usr/bin/node /opt/corp-portal/server.js
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# 数据目录需要可写
+ReadWritePaths=/opt/corp-portal/data
+
+[Install]
+WantedBy=multi-user.target
