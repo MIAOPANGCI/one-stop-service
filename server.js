@@ -22,7 +22,6 @@
 
 'use strict';
 
-const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
@@ -690,14 +689,14 @@ function log(m) {
 
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
+/* 直接探端口：能连上就说明还有进程占着，比等 HTTP 响应快得多 */
 function portFree() {
   return new Promise(function (resolve) {
-    const req = http.get({ host: '127.0.0.1', port: CFG.port, path: '/api/ping', timeout: 1200 }, function (res) {
-      res.resume();
-      resolve(false);
-    });
-    req.on('error', function () { resolve(true); });
-    req.on('timeout', function () { req.destroy(); resolve(false); });
+    const sock = require('net').connect({ port: CFG.port, host: '127.0.0.1' });
+    sock.setTimeout(600);
+    sock.on('connect', function () { sock.destroy(); resolve(false); });
+    sock.on('error', function () { resolve(true); });
+    sock.on('timeout', function () { sock.destroy(); resolve(true); });
   });
 }
 
@@ -758,7 +757,7 @@ function launch() {
   log('更新开始：' + CFG.from + ' -> ' + CFG.to);
 
   // 等旧进程真的退出（最多 20 秒）
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 24; i++) {
     if (await portFree()) break;
     await sleep(500);
   }
