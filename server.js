@@ -1259,32 +1259,37 @@ const server = http.createServer(function (req, res) {
           };
 
           try {
-            let child;
-
             if (process.platform === 'win32') {
-              // Windows 上直接 spawn 的子进程会被父进程的退出带走，
-              // 借 cmd 的 start 拉起独立进程才活得下来
-              child = require('child_process').spawn(
-                'cmd.exe',
-                ['/c', 'start', '/b', process.execPath, r.runner],
-                { cwd: DATA_DIR, detached: true, stdio: 'ignore', windowsHide: true }
+              // Windows：直接 spawn 出来的子进程会被父进程的退出带走。
+              // 交给 cmd 的 start 启动才彻底独立，注意第一个参数必须是窗口标题占位。
+              const cmdLine = 'start "" /b "' + process.execPath + '" "' + r.runner + '"';
+              try { fs.appendFileSync(bootLog, '\n[spawn] ' + cmdLine + '\n'); } catch (_) {}
+
+              require('child_process').exec(
+                cmdLine,
+                { cwd: DATA_DIR, windowsHide: true },
+                function (err) {
+                  if (err) {
+                    try { fs.appendFileSync(bootLog, '\n[start error] ' + err.message + '\n'); } catch (_) {}
+                  }
+                }
               );
+              setTimeout(leave, 900);
             } else {
               const fd = fs.openSync(bootLog, 'a');
-              child = require('child_process').spawn(process.execPath, [r.runner], {
+              const child = require('child_process').spawn(process.execPath, [r.runner], {
                 cwd: DATA_DIR,
                 detached: true,
                 stdio: ['ignore', fd, fd],
                 windowsHide: true
               });
+              child.on('spawn', leave);
+              child.on('error', function (e) {
+                try { fs.appendFileSync(bootLog, '\n[spawn error] ' + e.message + '\n'); } catch (_) {}
+                leave();
+              });
+              child.unref();
             }
-
-            child.on('spawn', leave);
-            child.on('error', function (e) {
-              try { fs.appendFileSync(bootLog, '\n[spawn error] ' + e.message + '\n'); } catch (_) {}
-              leave();
-            });
-            child.unref();
           } catch (e) {
             try { fs.appendFileSync(bootLog, '\n[spawn throw] ' + e.message + '\n'); } catch (_) {}
             leave();
