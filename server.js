@@ -798,15 +798,27 @@ function log(m) {
 
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
-/* 直接探端口：能连上就说明还有进程占着，比等 HTTP 响应快得多 */
-function portFree() {
-  return new Promise(function (resolve) {
-    const sock = require('net').connect({ port: CFG.port, host: '127.0.0.1' });
-    sock.setTimeout(600);
-    sock.on('connect', function () { sock.destroy(); resolve(false); });
-    sock.on('error', function () { resolve(true); });
-    sock.on('timeout', function () { sock.destroy(); resolve(true); });
-  });
+function sleepSync(ms) {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch (e) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { /* 兜底 */ }
+  }
+}
+
+/* Windows 上文件句柄偶尔释放得慢，遇到占用就等一会儿再试 */
+function replaceWithRetry() {
+  for (let i = 0; i < 12; i++) {
+    try {
+      replaceFiles();
+      return;
+    } catch (e) {
+      if (i === 11) throw e;
+      log('文件被占用，重试（' + e.message + '）');
+      sleepSync(1000);
+    }
+  }
 }
 
 function copyTree(from, to) {
@@ -865,19 +877,15 @@ function launch() {
 (async function () {
   log('更新开始：' + CFG.from + ' -> ' + CFG.to);
 
-  // 等旧进程真的退出（最多 20 秒）
-  for (let i = 0; i < 24; i++) {
-    if (await portFree()) break;
-    await sleep(500);
-  }
-  await sleep(400);
+  // 给旧进程留出退出时间；后面替换失败会自动重试，不怕它退得慢
+  await sleep(2000);
 
   let backupDir = '';
   try {
     backupDir = backup();
     log('已备份到 ' + backupDir);
 
-    replaceFiles();
+    replaceWithRetry();
     log('文件已替换');
 
     launch();
