@@ -1,6 +1,6 @@
 {
   "name": "corp-portal",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "企业门户 · 快捷导航（服务端存储，支持内外网双地址自动切换）",
   "main": "server.js",

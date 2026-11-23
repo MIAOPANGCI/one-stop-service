@@ -1004,12 +1004,87 @@
         '<b>发现新版本 v' + esc(d.latest) + '</b>' +
         '<span class="upd-cur">当前 v' + esc(d.current) + '</span>' +
         (d.notes ? '<pre class="upd-notes">' + esc(d.notes) + '</pre>' : '') +
+        (isAdmin() ? '<button class="btn-primary sm upd-go" id="doUpdateBtn" type="button" data-ver="' + esc(d.latest) + '">立即更新</button>' : '') +
         (d.download ? '<a class="upd-link" href="' + esc(d.download) + '" target="_blank" rel="noopener">下载更新包</a>' : '') +
         (d.url ? '<a class="upd-link" href="' + esc(d.url) + '" target="_blank" rel="noopener">查看更新说明</a>' : '');
     } else {
       box.classList.add('ok');
       box.textContent = '已是最新版本 v' + d.current;
     }
+  }
+
+  function isAdmin() {
+    return !!(authUser && authUser.role === 'admin');
+  }
+
+  /* ---------- 一键更新 ---------- */
+  function updMask(text, hint) {
+    var mask = document.getElementById('updMask');
+    if (!mask) {
+      mask = document.createElement('div');
+      mask.className = 'upd-mask';
+      mask.id = 'updMask';
+      mask.innerHTML = '<div class="upd-card"><div class="upd-spin"></div>' +
+        '<h3 id="updTitle"></h3><p id="updHint"></p></div>';
+      document.body.appendChild(mask);
+    }
+    document.getElementById('updTitle').textContent = text || '正在更新';
+    document.getElementById('updHint').textContent = hint || '';
+  }
+
+  function dropMask() {
+    var mask = document.getElementById('updMask');
+    if (mask) mask.parentNode.removeChild(mask);
+  }
+
+  function waitRestart(to) {
+    var started = Date.now();
+    var timer = setInterval(function () {
+      fetch('/api/ping', { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.version === to) {
+            clearInterval(timer);
+            updMask('更新完成', '新版本 v' + to + ' 已就绪，正在刷新…');
+            setTimeout(function () { location.reload(); }, 900);
+          } else {
+            updMask('正在启动新版本', '服务重启中，请稍候…');
+          }
+        })
+        .catch(function () {
+          updMask('正在重启服务', '大约需要 10 秒，请勿关闭页面…');
+        });
+
+      if (Date.now() - started > 90000) {
+        clearInterval(timer);
+        updMask('更新超时', '已等待 90 秒仍未恢复，请手动刷新页面或查看 data/update.log');
+      }
+    }, 1500);
+  }
+
+  function doAutoUpdate(to) {
+    window.askConfirm({
+      title: '更新到 v' + to,
+      text: '会下载安装包并自动重启服务，期间约 10 秒无法访问。data 目录和 config.json 会原样保留，旧文件自动备份到 data 下。',
+      okText: '开始更新',
+      danger: true
+    }).then(function (yes) {
+      if (!yes) return;
+
+      updMask('正在下载安装包', '请勿关闭页面…');
+
+      fetch('/api/system/update', { method: 'POST', cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) throw new Error(d.error || '更新失败');
+          updMask('正在重启服务', '大约需要 10 秒…');
+          waitRestart(d.to);
+        })
+        .catch(function (e) {
+          dropMask();
+          toast(e.message || '更新失败');
+        });
+    });
   }
 
   function checkUpdate() {
@@ -1449,6 +1524,11 @@
     $('#settingsBtn').addEventListener('click', openSettings);
     $('#setSaveBtn').addEventListener('click', saveSettings);
     $('#checkUpdateBtn').addEventListener('click', checkUpdate);
+
+    $('#updBox').addEventListener('click', function (e) {
+      var b = e.target.closest('#doUpdateBtn');
+      if (b) doAutoUpdate(b.dataset.ver);
+    });
     $('#exportBtn').addEventListener('click', doExport);
     $('#importBtn').addEventListener('click', function () { $('#importFile').click(); });
     $('#importFile').addEventListener('change', function () {

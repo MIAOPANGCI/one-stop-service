@@ -532,6 +532,270 @@ function checkUpdate(force) {
 }
 
 /* ------------------------------------------------------------
+ * 一键更新：下载 Release 资产 → 解压 → 交给独立进程替换并重启
+ * ---------------------------------------------------------- */
+const UPDATE_DIR = path.join(DATA_DIR, 'update');
+
+/* 只认 store / deflate 两种压缩方式，够用且不用依赖 */
+function unzipTo(buf, destDir) {
+  const zlib = require('zlib');
+
+  let eocd = -1;
+  const floor = Math.max(0, buf.length - 65558);
+  for (let i = buf.length - 22; i >= floor; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('不是有效的 zip 文件');
+
+  const count = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+  const entries = [];
+
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(off) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(off + 10);
+    const csize = buf.readUInt32LE(off + 20);
+    const nameLen = buf.readUInt16LE(off + 28);
+    const extraLen = buf.readUInt16LE(off + 30);
+    const cmtLen = buf.readUInt16LE(off + 32);
+    const lho = buf.readUInt32LE(off + 42);
+    const name = buf.toString('utf8', off + 46, off + 46 + nameLen);
+    entries.push({ name, method, csize, lho });
+    off += 46 + nameLen + extraLen + cmtLen;
+  }
+
+  entries.forEach(function (e) {
+    if (/\/$/.test(e.name)) return;
+    if (e.name.indexOf('..') > -1 || e.name.charAt(0) === '/') {
+      throw new Error('压缩包内含非法路径：' + e.name);
+    }
+
+    const nl = buf.readUInt16LE(e.lho + 26);
+    const el = buf.readUInt16LE(e.lho + 28);
+    const start = e.lho + 30 + nl + el;
+    const raw = buf.slice(start, start + e.csize);
+
+    let data = null;
+    if (e.method === 0) data = raw;
+    else if (e.method === 8) data = zlib.inflateRawSync(raw);
+    if (!data) return;
+
+    const target = path.join(destDir, e.name);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, data);
+  });
+}
+
+function httpsBinary(url, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    const u = new URL(url);
+    const req = https.get({
+      host: u.hostname,
+      path: u.pathname + u.search,
+      headers: { 'User-Agent': 'corp-portal/' + VERSION }
+    }, function (res) {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return httpsBinary(res.headers.location, timeoutMs).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error('下载失败，HTTP ' + res.statusCode));
+      }
+      const chunks = [];
+      res.on('data', function (c) { chunks.push(c); });
+      res.on('end', function () { resolve(Buffer.concat(chunks)); });
+    });
+    req.setTimeout(timeoutMs, function () { req.destroy(); reject(new Error('下载超时')); });
+    req.on('error', reject);
+  });
+}
+
+let updateRunning = false;
+
+/* 收到新包后：解压校验 → 写一个独立脚本 → 脚本等本进程退出再替换文件并重启 */
+async function applyUpdate(assetUrl, latest) {
+  if (updateRunning) throw new Error('已有更新在进行中');
+  updateRunning = true;
+
+  try {
+    fs.rmSync(UPDATE_DIR, { recursive: true, force: true });
+    fs.mkdirSync(UPDATE_DIR, { recursive: true });
+
+    const zip = await httpsBinary(assetUrl, 120 * 1000);
+    if (zip.length < 1024) throw new Error('安装包异常（体积过小）');
+
+    const stage = path.join(UPDATE_DIR, 'stage');
+    fs.mkdirSync(stage, { recursive: true });
+    unzipTo(zip, stage);
+
+    // 压缩包里应该有一个顶层目录
+    let root = stage;
+    const kids = fs.readdirSync(stage).filter(function (n) { return n.charAt(0) !== '.'; });
+    if (kids.length === 1 && fs.statSync(path.join(stage, kids[0])).isDirectory()) {
+      root = path.join(stage, kids[0]);
+    }
+
+    if (!fs.existsSync(path.join(root, 'server.js'))) {
+      throw new Error('安装包里找不到 server.js，不是本项目的包');
+    }
+
+    let pkgVersion = '';
+    try {
+      pkgVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version || '';
+    } catch (e) {}
+
+    if (!pkgVersion) throw new Error('安装包里的 package.json 读取失败');
+    if (cmpVersion(pkgVersion, latest) !== 0) {
+      throw new Error('包里版本 ' + pkgVersion + ' 与预期的 ' + latest + ' 不一致');
+    }
+    if (cmpVersion(latest, VERSION) <= 0) {
+      throw new Error('新版本不高于当前版本，无需更新');
+    }
+
+    const runner = path.join(UPDATE_DIR, 'apply.cjs');
+    fs.writeFileSync(runner, buildRunnerScript(root, latest), 'utf8');
+
+    return { root: root, runner: runner, version: pkgVersion };
+  } finally {
+    updateRunning = false;
+  }
+}
+
+/* 生成替换脚本：它跑在 data/ 下，不会被替换过程影响 */
+function buildRunnerScript(stageRoot, targetVersion) {
+  const cfg = {
+    root: ROOT,
+    stage: stageRoot,
+    port: PORT,
+    host: HOST,
+    from: VERSION,
+    to: targetVersion
+  };
+
+  return `/* 自动生成：等主进程退出后替换文件并重启 */
+const fs = require('fs');
+const path = require('path');
+const http = require('http');
+const { spawn } = require('child_process');
+
+const CFG = ` + JSON.stringify(cfg, null, 2) + `;
+
+const LOG = path.join(CFG.root, 'data', 'update.log');
+const KEEP = ['data', 'config.json', '.git', 'node_modules', '.workbuddy'];
+
+function log(m) {
+  try { fs.appendFileSync(LOG, new Date().toISOString() + '  ' + m + '\\n'); } catch (e) {}
+}
+
+function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+function portFree() {
+  return new Promise(function (resolve) {
+    const req = http.get({ host: '127.0.0.1', port: CFG.port, path: '/api/ping', timeout: 1200 }, function (res) {
+      res.resume();
+      resolve(false);
+    });
+    req.on('error', function () { resolve(true); });
+    req.on('timeout', function () { req.destroy(); resolve(false); });
+  });
+}
+
+function copyTree(from, to) {
+  fs.mkdirSync(to, { recursive: true });
+  fs.readdirSync(from).forEach(function (name) {
+    if (name === '.git') return;
+    const src = path.join(from, name);
+    const dst = path.join(to, name);
+    const st = fs.statSync(src);
+    if (st.isDirectory()) copyTree(src, dst);
+    else fs.copyFileSync(src, dst);
+  });
+}
+
+function backup() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const dir = path.join(CFG.root, 'data', 'update-backup-' + stamp);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.readdirSync(CFG.root).forEach(function (name) {
+    if (KEEP.indexOf(name) > -1) return;
+    const src = path.join(CFG.root, name);
+    const st = fs.statSync(src);
+    if (st.isDirectory()) copyTree(src, path.join(dir, name));
+    else fs.copyFileSync(src, path.join(dir, name));
+  });
+  return dir;
+}
+
+function replaceFiles() {
+  fs.readdirSync(CFG.stage).forEach(function (name) {
+    if (KEEP.indexOf(name) > -1) return;
+    const src = path.join(CFG.stage, name);
+    const dst = path.join(CFG.root, name);
+    const st = fs.statSync(src);
+    if (st.isDirectory()) {
+      fs.rmSync(dst, { recursive: true, force: true });
+      copyTree(src, dst);
+    } else {
+      try { fs.rmSync(dst, { force: true }); } catch (e) {}
+      fs.copyFileSync(src, dst);
+    }
+  });
+}
+
+function launch() {
+  const out = fs.openSync(LOG, 'a');
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: CFG.root,
+    detached: true,
+    stdio: ['ignore', out, out],
+    windowsHide: true
+  });
+  child.unref();
+}
+
+(async function () {
+  log('更新开始：' + CFG.from + ' -> ' + CFG.to);
+
+  // 等旧进程真的退出（最多 20 秒）
+  for (let i = 0; i < 40; i++) {
+    if (await portFree()) break;
+    await sleep(500);
+  }
+  await sleep(400);
+
+  let backupDir = '';
+  try {
+    backupDir = backup();
+    log('已备份到 ' + backupDir);
+
+    replaceFiles();
+    log('文件已替换');
+
+    launch();
+    log('已启动新进程，更新结束');
+  } catch (err) {
+    log('替换失败：' + err.message);
+    if (backupDir) {
+      try {
+        Object.keys(CFG).length;
+        fs.readdirSync(backupDir).forEach(function (name) {
+          const src = path.join(backupDir, name);
+          const dst = path.join(CFG.root, name);
+          const st = fs.statSync(src);
+          if (st.isDirectory()) { fs.rmSync(dst, { recursive: true, force: true }); copyTree(src, dst); }
+          else fs.copyFileSync(src, dst);
+        });
+        log('已回滚到更新前的文件');
+      } catch (e2) { log('回滚也失败了：' + e2.message); }
+    }
+    launch();
+  }
+})();
+`;
+}
+
+/* ------------------------------------------------------------
  * 链接校验
  * ---------------------------------------------------------- */
 function sanitizeLink(input, base) {
@@ -831,6 +1095,44 @@ const server = http.createServer(function (req, res) {
     if (!user) return deny(401, '请先登录');
     const force = /[?&]force=1/.test(req.url || '');
     checkUpdate(force).then(function (d) { sendJson(res, 200, d); });
+    return;
+  }
+
+  /* ---------- 一键更新（仅管理员） ---------- */
+  if (pathname === '/api/system/update' && method === 'POST') {
+    if (!user) return deny(401, '请先登录');
+    if (user.role !== 'admin') return deny(403, '只有管理员可以更新系统');
+
+    (async function () {
+      try {
+        const info = await checkUpdate(true);
+        if (!info || !info.ok) throw new Error('暂时查不到最新版本，等会儿再试');
+        if (!info.hasUpdate) throw new Error('已经是最新版本了');
+        if (!info.download) throw new Error('该版本没有上传安装包');
+
+        const r = await applyUpdate(info.download, info.latest);
+
+        sendJson(res, 200, { ok: true, from: VERSION, to: r.version, restart: true });
+
+        // 先把响应发出去，再退出进程，让后台脚本接手替换和重启
+        setTimeout(function () {
+          try { persist(true); } catch (e) {}
+          try {
+            const child = require('child_process').spawn(process.execPath, [r.runner], {
+              cwd: DATA_DIR,
+              detached: true,
+              stdio: 'ignore',
+              windowsHide: true
+            });
+            child.unref();
+          } catch (e) {}
+          process.exit(0);
+        }, 700);
+      } catch (e) {
+        deny(400, e.message || '更新失败');
+      }
+    })();
+
     return;
   }
 

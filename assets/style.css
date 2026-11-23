@@ -2363,3 +2363,62 @@ html[data-theme="dark"] .upl-box.is-alpha {
 html[data-theme="dark"] .upd-box.ok { background: #16332d; color: #5fd6b8; }
 html[data-theme="dark"] .upd-box.new { background: #33270f; color: #f0b455; }
 html[data-theme="dark"] .upd-box.warn { background: #331a1d; color: #ff9ba2; }
+
+/* ===========================================================
+   一键更新：按钮与重启遮罩
+   =========================================================== */
+.btn-primary.upd-go {
+  height: 30px;
+  margin: 2px 12px 2px 0;
+  padding: 0 15px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  vertical-align: middle;
+}
+
+.upd-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 14, 22, .74);
+  backdrop-filter: blur(4px);
+  animation: fade .2s var(--ease);
+}
+
+.upd-card {
+  width: 320px;
+  padding: 30px 26px 26px;
+  border-radius: 16px;
+  background: var(--card);
+  text-align: center;
+  box-shadow: 0 30px 70px -28px rgba(0, 0, 0, .6);
+  animation: pop .22s var(--ease);
+}
+
+.upd-spin {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 16px;
+  border: 3px solid color-mix(in srgb, var(--brand) 22%, transparent);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: updspin .8s linear infinite;
+}
+
+@keyframes updspin { to { transform: rotate(360deg); } }
+
+.upd-card h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.upd-card p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--ink-3);
+}
