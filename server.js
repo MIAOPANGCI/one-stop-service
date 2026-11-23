@@ -439,6 +439,74 @@ function persist(skipBackup) {
 }
 
 /* ------------------------------------------------------------
+ * 上传文件回收：只留还被引用的
+ * ---------------------------------------------------------- */
+function uploadRefs() {
+  const refs = new Set();
+
+  const take = function (v) {
+    const str = String(v || '');
+    const i = str.indexOf('/uploads/');
+    if (i === -1) return;
+    const name = str.slice(i + 9).split('?')[0].split('#')[0];
+    if (name && name.indexOf('/') === -1) refs.add(name);
+  };
+
+  if (db && db.settings) {
+    take(db.settings.logoImage);
+    take(db.settings.heroImage);
+    take(db.settings.heroImageDark);
+  }
+  (db && db.links ? db.links : []).forEach(function (l) { take(l.icon); });
+
+  return refs;
+}
+
+function uploadStats() {
+  const refs = uploadRefs();
+  let count = 0, size = 0, unused = 0;
+
+  try {
+    fs.readdirSync(UPLOAD_DIR).forEach(function (name) {
+      let st;
+      try { st = fs.statSync(path.join(UPLOAD_DIR, name)); } catch (e) { return; }
+      if (!st.isFile()) return;
+      count++;
+      size += st.size;
+      if (!refs.has(name)) unused++;
+    });
+  } catch (e) {}
+
+  return { count: count, size: size, unused: unused };
+}
+
+/* minAgeMs：只删这个时间之前上传的，免得把"传了但还没点保存"的图清掉 */
+function sweepUploads(minAgeMs) {
+  const refs = uploadRefs();
+  const now = Date.now();
+  let removed = 0, freed = 0;
+
+  try {
+    fs.readdirSync(UPLOAD_DIR).forEach(function (name) {
+      if (refs.has(name)) return;
+
+      const p = path.join(UPLOAD_DIR, name);
+      let st;
+      try { st = fs.statSync(p); } catch (e) { return; }
+      if (!st.isFile()) return;
+      if (minAgeMs > 0 && now - st.mtimeMs < minAgeMs) return;
+
+      try { fs.unlinkSync(p); removed++; freed += st.size; } catch (e) {}
+    });
+  } catch (e) {}
+
+  return { removed: removed, freed: freed };
+}
+
+/* 每小时兜底清一次，只动 6 小时前的 */
+setInterval(function () { sweepUploads(6 * 3600 * 1000); }, 60 * 60 * 1000);
+
+/* ------------------------------------------------------------
  * 更新检查：向 GitHub 要最新 Release，30 分钟内复用结果
  * ---------------------------------------------------------- */
 let updateCache = { at: 0, data: null };
@@ -1098,6 +1166,22 @@ const server = http.createServer(function (req, res) {
     return;
   }
 
+  /* ---------- 上传文件统计 / 清理（仅管理员） ---------- */
+  if (pathname === '/api/system/uploads' && method === 'GET') {
+    if (!user) return deny(401, '请先登录');
+    if (user.role !== 'admin') return deny(403, '只有管理员可以查看');
+    sendJson(res, 200, Object.assign({ ok: true }, uploadStats()));
+    return;
+  }
+
+  if (pathname === '/api/system/sweep-uploads' && method === 'POST') {
+    if (!user) return deny(401, '请先登录');
+    if (user.role !== 'admin') return deny(403, '只有管理员可以清理');
+    const r = sweepUploads(0);
+    sendJson(res, 200, Object.assign({ ok: true, removed: r.removed, freed: r.freed }, uploadStats()));
+    return;
+  }
+
   /* ---------- 一键更新（仅管理员） ---------- */
   if (pathname === '/api/system/update' && method === 'POST') {
     if (!user) return deny(401, '请先登录');
@@ -1582,6 +1666,15 @@ server.listen(PORT, HOST, function () {
   console.log('  用户数量 : ' + db.users.length);
   console.log('  ------------------------------------------');
   console.log('');
+
+  // 启动后回收一次：只动 6 小时前上传、现在没人引用的
+  setTimeout(function () {
+    const r = sweepUploads(6 * 3600 * 1000);
+    if (r.removed) {
+      console.log('  [清理] 移除 ' + r.removed + ' 个未引用的上传文件，释放 ' +
+        (r.freed / 1048576).toFixed(1) + ' MB');
+    }
+  }, 1500);
 
   if (AUTO_OPEN) openBrowser('http://localhost:' + PORT + '/');
 });

@@ -973,6 +973,7 @@
     buildWallPresets();
 
     if ($('#verTag')) $('#verTag').textContent = state.version ? 'v' + state.version : 'v—';
+    loadUploadStat();
     if ($('#updBox')) { $('#updBox').hidden = true; $('#updBox').className = 'upd-box'; }
 
     $('#serverInfo').textContent = online
@@ -1084,6 +1085,45 @@
           dropMask();
           toast(e.message || '更新失败');
         });
+    });
+  }
+
+  /* ---------- 上传文件统计与清理 ---------- */
+  function paintUploadStat(d) {
+    var el = $('#uploadStat');
+    if (!el) return;
+    if (!d || !d.ok) { el.textContent = ''; return; }
+    el.textContent = '上传目录 ' + d.count + ' 个文件 · ' + (d.size / 1048576).toFixed(1) + ' MB' +
+      (d.unused ? '，其中 ' + d.unused + ' 个没被引用' : '');
+  }
+
+  function loadUploadStat() {
+    if (!isAdmin()) return;
+    $('#sweepBtn').hidden = false;
+    fetch('/api/system/uploads', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(paintUploadStat)
+      .catch(function () {});
+  }
+
+  function doSweepUploads() {
+    window.askConfirm({
+      title: '清理未使用的图片',
+      text: '上传过但现在已经没人引用的 Logo、壁纸、图标会被删掉。正在使用的不会动。',
+      okText: '清理',
+      danger: true
+    }).then(function (yes) {
+      if (!yes) return;
+      fetch('/api/system/sweep-uploads', { method: 'POST', cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) throw new Error(d.error || '清理失败');
+          paintUploadStat(d);
+          toast(d.removed
+            ? ('已清理 ' + d.removed + ' 个文件，释放 ' + (d.freed / 1048576).toFixed(1) + ' MB')
+            : '没有需要清理的文件');
+        })
+        .catch(function (e) { toast(e.message || '清理失败'); });
     });
   }
 
@@ -1524,6 +1564,7 @@
     $('#settingsBtn').addEventListener('click', openSettings);
     $('#setSaveBtn').addEventListener('click', saveSettings);
     $('#checkUpdateBtn').addEventListener('click', checkUpdate);
+    $('#sweepBtn').addEventListener('click', doSweepUploads);
 
     $('#updBox').addEventListener('click', function (e) {
       var b = e.target.closest('#doUpdateBtn');
