@@ -1259,37 +1259,21 @@ const server = http.createServer(function (req, res) {
           };
 
           try {
-            if (process.platform === 'win32') {
-              // Windows：直接 spawn 出来的子进程会被父进程的退出带走。
-              // 交给 cmd 的 start 启动才彻底独立，注意第一个参数必须是窗口标题占位。
-              const cmdLine = 'start "" /b "' + process.execPath + '" "' + r.runner + '"';
-              try { fs.appendFileSync(bootLog, '\n[spawn] ' + cmdLine + '\n'); } catch (_) {}
-
-              require('child_process').exec(
-                cmdLine,
-                { cwd: DATA_DIR, windowsHide: true },
-                function (err) {
-                  if (err) {
-                    try { fs.appendFileSync(bootLog, '\n[start error] ' + err.message + '\n'); } catch (_) {}
-                  }
-                }
-              );
-              setTimeout(leave, 900);
-            } else {
-              const fd = fs.openSync(bootLog, 'a');
-              const child = require('child_process').spawn(process.execPath, [r.runner], {
-                cwd: DATA_DIR,
-                detached: true,
-                stdio: ['ignore', fd, fd],
-                windowsHide: true
-              });
-              child.on('spawn', leave);
-              child.on('error', function (e) {
-                try { fs.appendFileSync(bootLog, '\n[spawn error] ' + e.message + '\n'); } catch (_) {}
-                leave();
-              });
-              child.unref();
-            }
+            // 关键：stdio 必须是 'ignore'。
+            // 之前把父进程打开的文件描述符传给子进程，父进程一退出 fd 就失效，
+            // 子进程刚写完第一条日志就没了。runner 自己会写 update.log，不需要继承。
+            const child = require('child_process').spawn(process.execPath, [r.runner], {
+              cwd: DATA_DIR,
+              detached: true,
+              stdio: 'ignore',
+              windowsHide: true
+            });
+            child.on('spawn', leave);
+            child.on('error', function (e) {
+              try { fs.appendFileSync(bootLog, '\n[spawn error] ' + e.message + '\n'); } catch (_) {}
+              leave();
+            });
+            child.unref();
           } catch (e) {
             try { fs.appendFileSync(bootLog, '\n[spawn throw] ' + e.message + '\n'); } catch (_) {}
             leave();
