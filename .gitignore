@@ -22,3 +22,4 @@ desktop.ini
 desktop/dist/
 desktop/out/
 desktop/.cache/
+desktop/build/exe-icon-preview.png
