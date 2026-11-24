@@ -170,11 +170,28 @@ step('创建 Release');
 const token = getToken();
 if (!token) die('拿不到 GitHub 凭据。设置 GITHUB_TOKEN 环境变量，或先 git push 一次让凭据写入。');
 
+/* 上一个版本 tag：更新说明只列这之后的新提交，不重复带以前的 */
+function previousTag() {
+  const candidates = ['HEAD^', 'HEAD'];
+  for (const rev of candidates) {
+    try {
+      const t = run('git', ['describe', '--tags', '--abbrev=0', rev]);
+      if (t && t !== tag) return t;
+    } catch (e) { /* 还没打过 tag */ }
+  }
+  return '';
+}
+
+const prevTag = previousTag();
+const range = prevTag ? `${prevTag}..HEAD` : '-12';
+const commits = run('git', ['log', '--pretty=format:- %s', range]).trim();
+
 const notes = NOTES_ARG || [
   '## 更新内容',
   '',
-  run('git', ['log', '--pretty=format:- %s', '-12']),
+  commits || '- 细节调整',
   '',
+  prevTag ? `从 ${prevTag} 升级。` : '',
   '## 升级方式',
   '',
   '**方式一（推荐）**：在大厅「设置 → 检查更新」里点「立即更新」，会自动下载、替换并重启，`data/` 和 `config.json` 原样保留。',
@@ -185,7 +202,7 @@ const notes = NOTES_ARG || [
   '2. 备份自己的 `data/` 和 `config.json`',
   '3. 用新文件覆盖旧的（保留 `data/`、`config.json`）',
   '4. 重启服务'
-].join('\n');
+].filter(s => s !== null && s !== undefined).filter((s, i, arr) => !(s === '' && arr[i - 1] === '')).join('\n');
 
 let release = null;
 try {
