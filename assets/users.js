@@ -293,7 +293,9 @@
 
     $('#logoutBtn').addEventListener('click', function () {
       fetch('/api/logout', { method: 'POST' }).then(function () {
-        location.replace('/login.html');
+        // 和首页一致：退出后回大厅，不停在登录页
+        try { sessionStorage.setItem('cp-logged-out', '1'); } catch (e) {}
+        location.replace('/');
       });
     });
   });

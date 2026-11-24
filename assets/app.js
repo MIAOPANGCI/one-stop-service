@@ -1683,7 +1683,9 @@
     $('#logoutItem').addEventListener('click', function () {
       drop.hidden = true;
       fetch('/api/logout', { method: 'POST' }).then(function () {
-        location.replace('/login.html');
+        // 退出后回大厅首页（访客视图），不停在登录页
+        try { sessionStorage.setItem('cp-logged-out', '1'); } catch (e) {}
+        location.replace('/');
       });
     });
 
@@ -1782,5 +1784,13 @@
     loadState().then(function (ok) {
       if (ok) refreshNet();
     });
+
+    /* 刚退出登录跳回大厅：给一句话，别让人以为没生效 */
+    try {
+      if (sessionStorage.getItem('cp-logged-out') === '1') {
+        sessionStorage.removeItem('cp-logged-out');
+        setTimeout(function () { toast('已退出登录'); }, 500);
+      }
+    } catch (e) {}
   });
 })();
