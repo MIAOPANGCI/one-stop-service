@@ -2862,3 +2862,34 @@ body.has-tabs .nav { top: var(--tab-h); }
   .set-nav-btn { white-space: nowrap; }
   .set-panes { overflow-y: auto; padding-right: 4px; }
 }
+
+/* ===========================================================
+   服务编辑：不内嵌开关
+   =========================================================== */
+.chk-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 2px 0 12px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.chk-row input {
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  accent-color: var(--brand);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.pick-item .pick-ext {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-3);
+  opacity: .7;
+}

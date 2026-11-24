@@ -1074,6 +1074,8 @@ function sanitizeLink(input, base) {
   if ('color' in src) out.color = cleanColor(src.color);
   if ('urlLan' in src) out.urlLan = cleanUrl(src.urlLan);
   if ('urlWan' in src) out.urlWan = cleanUrl(src.urlWan);
+  // 有些站点内嵌就是坏的（阻止挂载 / 依赖同源父页），单独标记走新窗口
+  if ('noFrame' in src) out.noFrame = Boolean(src.noFrame);
   return out;
 }
 

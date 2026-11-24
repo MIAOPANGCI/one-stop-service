@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.45" y2="1">
+      <stop offset="0" stop-color="#eef3ff"/>
+      <stop offset="0.44" stop-color="#dbe6fb"/>
+      <stop offset="0.76" stop-color="#c9d9f6"/>
+      <stop offset="1" stop-color="#b9cdf0"/>
+    </linearGradient>
+    <radialGradient id="a" cx="0.22" cy="0.2" r="0.5">
+      <stop offset="0" stop-color="#8fb6ff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#8fb6ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="b" cx="0.82" cy="0.72" r="0.48">
+      <stop offset="0" stop-color="#b49dff" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#b49dff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c" cx="0.58" cy="0.94" r="0.42">
+      <stop offset="0" stop-color="#9fe3e0" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#9fe3e0" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <rect width="1920" height="1080" fill="url(#a)"/>
+  <rect width="1920" height="1080" fill="url(#b)"/>
+  <rect width="1920" height="1080" fill="url(#c)"/>
+
+  <g fill="none" stroke="#8fa8d8" stroke-opacity="0.22" stroke-width="1.5">
+    <circle cx="1460" cy="240" r="220"/><circle cx="1460" cy="240" r="330"/>
+    <circle cx="1460" cy="240" r="440"/>
+  </g>
+</svg>

@@ -351,7 +351,11 @@
     if (!r.url) { toast('「' + link.name + '」还没有配置访问地址'); return; }
 
     var mode = state.settings.openMode || (state.settings.openInNewTab === false ? 'same' : 'new');
-    if (mode === 'tab') { openTab(link.name, r.url); return; }
+    if (mode === 'tab') {
+      if (link.noFrame) { openInNewTab(r.url); return; }
+      openTab(link.name, r.url);
+      return;
+    }
     if (mode === 'same') { location.href = r.url; return; }
 
     // 用临时 <a> 打开：既能带 noopener，又不会被 window.open 的返回值坑到
@@ -594,8 +598,10 @@
           ? '<img src="' + esc(raw) + '" alt="">'
           : esc(raw || (l.name || '?').slice(0, 1));
         return '<button class="pick-item" type="button" data-link="' + esc(l.id) + '"' +
-          (url ? '' : ' disabled') + '><i class="pick-ico">' + ico + '</i>' +
-          '<span>' + esc(l.name) + '</span></button>';
+          (url ? '' : ' disabled') + (l.noFrame ? ' title="在新标签页打开"' : '') +
+          '><i class="pick-ico">' + ico + '</i>' +
+          '<span>' + esc(l.name) + '</span>' +
+          (l.noFrame ? '<i class="pick-ext">↗</i>' : '') + '</button>';
       }).join('');
       return '<div class="pick-cat">' + esc(cat) + '</div>' + items;
     }).join('');
@@ -1043,6 +1049,7 @@
     $('#f-desc').value = link ? link.desc || '' : '';
     $('#f-lan').value = link ? link.urlLan || '' : '';
     $('#f-wan').value = link ? link.urlWan || '' : '';
+    $('#f-noframe').checked = !!(link && link.noFrame);
 
     formIcon = link ? (link.icon || '') : '';
     formColor = link ? (/^#[0-9a-fA-F]{6}$/.test(link.color || '') ? link.color : PALETTE[0])
@@ -1084,7 +1091,8 @@
       icon: isIconUrl(formIcon) ? formIcon : clipIcon(formIcon || '', 4),
       color: formColor,
       urlLan: lan,
-      urlWan: wan
+      urlWan: wan,
+      noFrame: $('#f-noframe').checked
     };
 
     var p = editingId
@@ -2088,7 +2096,10 @@
       var id = b.getAttribute('data-link');
       var l = null;
       (state.links || []).forEach(function (x) { if (x.id === id) l = x; });
-      if (l) openTab(l.name, pickUrl(l).url);
+      if (!l) return;
+      var u = pickUrl(l).url;
+      if (l.noFrame) { openInNewTab(u); hidePicker(); return; }
+      openTab(l.name, u);
     });
 
     $('#tabPickSearch').addEventListener('input', function () {
