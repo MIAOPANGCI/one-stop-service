@@ -380,9 +380,10 @@
             <textarea id="s-probe" rows="2" placeholder="http://192.168.3.1&#10;http://192.168.8.1:8000/ping"></textarea>
             <div class="probe-row">
               <button class="btn-line sm" id="probeTestBtn" type="button">测试连通</button>
+              <button class="btn-line sm" id="lanFillBtn" type="button" hidden>用本机内网地址</button>
               <span class="probe-res" id="probeRes"></span>
             </div>
-            <small class="hint">每行一个，能连上任意一个即判定为内网。填内网网关，或任意只有内网能打开的地址。</small>
+            <small class="hint">每行一个，能连上任意一个即判定为内网。填内网网关，或任意只有内网能打开的地址；只响应 ping、没开网页端口的设备不行（浏览器发不了 ICMP），这种情况点「用本机内网地址」。</small>
           </label>
         </section>
       </div>

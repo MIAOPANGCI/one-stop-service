@@ -54,7 +54,8 @@
       netMode: 'auto', probeUrls: [], openInNewTab: true, updatedAt: null
     },
     links: [],
-    version: ''
+    version: '',
+    lan: []
   };
   var authUser = null;
   var roles = { admin: '管理员', editor: '编辑者', viewer: '浏览者' };
@@ -158,6 +159,7 @@
       state.settings = Object.assign({}, state.settings, data.state.settings || {});
       state.links = Array.isArray(data.state.links) ? data.state.links : [];
       if (data.state.version) state.version = data.state.version;
+      if (Array.isArray(data.state.lan)) state.lan = data.state.lan;
     }
     if (data && data.user !== undefined) authUser = data.user;
     if (data && data.roles) roles = data.roles;
@@ -277,9 +279,21 @@
       return Promise.all(probes.map(function (u) { return probeOnce(u); }))
         .then(function (rs) { return rs.some(Boolean) ? 'lan' : 'wan'; });
     }
+
     var host = location.hostname;
-    if (!host) return Promise.resolve('lan');
-    return Promise.resolve(isPrivateHost(host) ? 'lan' : 'wan');
+    var byHost = !host ? 'lan' : (isPrivateHost(host) ? 'lan' : 'wan');
+
+    // 没填探测地址时，拿门户自己的内网地址试一次：
+    // 这台机器一定开着网页端口，而且这个地址外网访问不到，
+    // 比单纯猜主机名可靠，也不依赖局域网里有没有别的可探测设备。
+    // HTTPS 页面探 http:// 会被浏览器当混合内容拦掉，所以这招只在 http 页面用。
+    var self = location.protocol === 'https:' ? [] : (state.lan || []).filter(function (u) {
+      return u && u !== location.origin;
+    });
+    if (!self.length) return Promise.resolve(byHost);
+
+    return Promise.all(self.map(function (u) { return probeOnce(u); }))
+      .then(function (rs) { return rs.some(Boolean) ? 'lan' : byHost; });
   }
 
   function refreshNet() {
@@ -555,6 +569,7 @@
       .then(function (d) {
         if (d && typeof d.links === 'number') guestLinks = d.links;
         if (d && d.version) state.version = d.version;
+        if (d && Array.isArray(d.lan)) state.lan = d.lan;
         if (d && d.site) {
           var s = state.settings;
           s.company = d.site.company || s.company;
@@ -961,6 +976,7 @@
     paintHeroPreview();
     $('#s-mode').value = s.netMode || 'auto';
     $('#s-probe').value = (s.probeUrls || []).join('\n');
+    $('#lanFillBtn').hidden = !(state.lan && state.lan.length);
 
     var admin = isAdmin();
     $('#loginRow').hidden = !admin;
@@ -1172,7 +1188,7 @@
 
       if (ok === 0) {
         box.className = 'probe-res warn';
-        box.textContent = '全部连不上：' + bad.join('、') + '。地址写错、端口不通，或它只响应 ping 不开网页端口';
+        box.textContent = '全部连不上：' + bad.join('、') + '。地址写错或端口不通；只响应 ping、没开网页端口的设备也测不通（浏览器发不了 ICMP），换成有网页端口的地址';
       } else if (ok === list.length) {
         box.className = 'probe-res ok';
         box.textContent = '全部可连通（' + ok + '/' + list.length + '），保存后按内网处理';
@@ -1613,6 +1629,18 @@
     $('#probeTestBtn').addEventListener('click', function (e) {
       e.preventDefault();
       testProbes();
+    });
+
+    $('#lanFillBtn').addEventListener('click', function (e) {
+      e.preventDefault();
+      var url = (state.lan || [])[0];
+      if (!url) return;
+      var list = $('#s-probe').value.split('\n')
+        .map(function (v) { return v.trim(); })
+        .filter(Boolean);
+      if (list.indexOf(url) === -1) list.push(url);
+      $('#s-probe').value = list.join('\n');
+      toast('已填入 ' + url);
     });
     $('#checkUpdateBtn').addEventListener('click', checkUpdate);
     $('#sweepBtn').addEventListener('click', doSweepUploads);

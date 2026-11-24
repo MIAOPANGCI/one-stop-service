@@ -90,6 +90,27 @@ ensureConfig(CFG);
 
 const PORT = pickPort(getArg('--port')) || pickPort(process.env.PORT) || pickPort(CFG && CFG.port) || 8080;
 const HOST = String(getArg('--host') || process.env.HOST || (CFG && CFG.host) || '0.0.0.0').trim();
+
+/* 本机在局域网里的地址。前端拿它判断"人在不在内网"：
+   这些地址外网访问不到，能连上就说明在内部网络里。
+   浏览器发不了 ICMP，所以内网判断只能靠 HTTP 请求，ping 通但没开网页端口的设备没法当探测目标。 */
+function lanUrls() {
+  const out = [];
+  if (HOST === '0.0.0.0' || HOST === '::' || HOST === '') {
+    const nets = require('os').networkInterfaces();
+    Object.keys(nets).forEach(function (k) {
+      (nets[k] || []).forEach(function (n) {
+        if (n.family === 'IPv4' && !n.internal && !/^169\.254\./.test(n.address)) {
+          out.push('http://' + n.address + ':' + PORT);
+        }
+      });
+    });
+  } else if (HOST !== '127.0.0.1' && HOST !== 'localhost') {
+    out.push('http://' + HOST + ':' + PORT);
+  }
+  return out.slice(0, 3);
+}
+
 const AUTO_OPEN = process.argv.indexOf('--open') > -1;
 const ADMIN_USER = (process.env.ADMIN_USER || 'admin').trim();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
@@ -1127,7 +1148,7 @@ const server = http.createServer(function (req, res) {
   const statePayload = function () {
     return {
       ok: true,
-      state: { settings: db.settings, links: db.links, version: VERSION },
+      state: { settings: db.settings, links: db.links, version: VERSION, lan: lanUrls() },
       user: user ? publicUser(user) : null,
       roles: ROLE_LABEL
     };
@@ -1141,7 +1162,7 @@ const server = http.createServer(function (req, res) {
   if (pathname === '/api/ping' && method === 'GET') {
     const s = db.settings;
     sendJson(res, 200, {
-      ok: true, name: 'corp-portal', version: VERSION, links: db.links.length,
+      ok: true, name: 'corp-portal', version: VERSION, links: db.links.length, lan: lanUrls(),
       users: db.users.length, requireLogin: s.requireLogin !== false,
       uptime: Math.round(process.uptime()),
       // 只暴露登录页需要的品牌信息，不含任何业务数据
