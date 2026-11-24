@@ -53,7 +53,7 @@
       logo: '企', brandColor: '#2fa795', heroImage: '', heroFoot: '我们为你准备了丰富的内部服务',
       netMode: 'auto', probeUrls: [], openInNewTab: true, openMode: 'new',
       fontFamily: '', inkLight: '', inkDark: '',
-      heroGlow: true, glowColor: '', tabPopups: 'block', updatedAt: null
+      heroGlow: true, glowColor: '', tabPopups: 'allow', updatedAt: null
     },
     links: [],
     version: '',
@@ -73,7 +73,7 @@
   var formBrand = BRAND_THEMES[0].color;
   var formLogoImage = '';
   var formGlow = '';
-  var formTabPop = 'block';
+  var formTabPop = 'allow';
   var formInkLight = '';
   var formInkDark = '';
   var formHeroImage = '';
@@ -370,6 +370,7 @@
   var tabs = [];        // 真实页签，「门户」不占位
   var activeId = 0;     // 0 = 门户
   var tabSeq = 0;
+  var lastNewId = 0;
 
   function openTab(name, url) {
     if (!url) return;
@@ -382,6 +383,7 @@
     } else {
       tabs.push({ id: ++tabSeq, name: name || url, url: url, failed: false });
       activeId = tabSeq;
+      lastNewId = tabSeq;
     }
     hidePicker();
     syncTabs();
@@ -404,8 +406,8 @@
 
   function tabSandbox() {
     var base = 'allow-scripts allow-forms allow-same-origin allow-modals allow-downloads';
-    // 默认拦掉 target=_blank / window.open：很多内网系统点一下就弹新窗口，很烦
-    if (state.settings.tabPopups === 'allow') {
+    // 默认放行弹出窗口：静默拦掉会让「点了没反应」，比弹一个新标签更糟
+    if (state.settings.tabPopups !== 'block') {
       base += ' allow-popups allow-popups-to-escape-sandbox';
     }
     return base;
@@ -423,8 +425,11 @@
     if (activeId !== 0 && !findTab(activeId)) activeId = 0;
     var homeOn = activeId === 0;
 
+    var homeIco = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M3.5 10.6 12 3.6l8.5 7"></path><path d="M5.8 9.6V20h12.4V9.6"></path></svg>';
+
     var html = '<button class="tabitem tab-home' + (homeOn ? ' on' : '') + '" type="button" data-id="0">' +
-      '<span>门户</span></button>';
+      '<i class="tabico">' + homeIco + '</i><span>门户</span></button>';
 
     html += tabs.map(function (t) {
       return '<button class="tabitem' + (t.id === activeId ? ' on' : '') + '" type="button" data-id="' + t.id + '">' +
@@ -434,6 +439,13 @@
     }).join('');
 
     $('#tabList').innerHTML = html;
+
+    // 只有刚加进来的那个播放进场动画，重建列表时不该整排一起动
+    if (lastNewId) {
+      var fresh = $('#tabList').querySelector('[data-id="' + lastNewId + '"]');
+      if (fresh) fresh.classList.add('in');
+      lastNewId = 0;
+    }
 
     var box = $('#tabFrames');
     box.hidden = homeOn;
@@ -479,6 +491,16 @@
   }
 
   function closeTab(id) {
+    var el = $('#tabList').querySelector('[data-id="' + id + '"]');
+    if (el && !el.classList.contains('out')) {
+      el.classList.add('out');
+      setTimeout(function () { removeTab(id); }, 170);
+      return;
+    }
+    removeTab(id);
+  }
+
+  function removeTab(id) {
     var box = $('#tabFrames');
     var f = box.querySelector('iframe[data-id="' + id + '"]');
     if (f) f.parentNode.removeChild(f);
@@ -2044,7 +2066,10 @@
       if (t) openInNewTab(t.url);
     });
     $('#tabCloseAll').addEventListener('click', function () {
-      tabs.forEach(function (t) { closeTab(t.id); });
+      // 一起淡出，别一个个等，不然中间会重建列表
+      Array.prototype.slice.call($('#tabList').querySelectorAll('.tabitem:not(.tab-home)'))
+        .forEach(function (el) { el.classList.add('out'); });
+      setTimeout(function () { tabs = []; activeId = 0; syncTabs(); }, 170);
     });
     $('#setSaveBtn').addEventListener('click', saveSettings);
 

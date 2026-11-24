@@ -291,7 +291,7 @@ const DEFAULT_SETTINGS = {
   probeUrls: [],
   openInNewTab: true,
   openMode: 'new',          // new 新标签页 / same 当前页 / tab 站内页标签
-  tabPopups: 'block',       // 页签内是否放行 target=_blank
+  tabPopups: 'allow',       // 页签内是否放行 target=_blank
   fontFamily: '',           // 空 = 默认字体栈
   inkLight: '',             // 空 = 跟随浅色主题
   inkDark: '',              // 空 = 跟随深色主题
@@ -1589,7 +1589,7 @@ const server = http.createServer(function (req, res) {
       if ('openInNewTab' in body) s.openInNewTab = Boolean(body.openInNewTab);
       if ('heroGlow' in body) s.heroGlow = Boolean(body.heroGlow);
       if ('glowColor' in body) s.glowColor = cleanHexColor(body.glowColor, '');
-      if ('tabPopups' in body) s.tabPopups = body.tabPopups === 'allow' ? 'allow' : 'block';
+      if ('tabPopups' in body) s.tabPopups = body.tabPopups === 'block' ? 'block' : 'allow';
       if ('openMode' in body) {
         s.openMode = ['new', 'same', 'tab'].indexOf(body.openMode) > -1 ? body.openMode : 'new';
         s.openInNewTab = s.openMode !== 'same';
@@ -1785,7 +1785,7 @@ const server = http.createServer(function (req, res) {
         if (payload.settings.inkLight) s.inkLight = cleanHexColor(payload.settings.inkLight, '');
         if (payload.settings.inkDark) s.inkDark = cleanHexColor(payload.settings.inkDark, '');
         if (['new', 'same', 'tab'].indexOf(payload.settings.openMode) > -1) s.openMode = payload.settings.openMode;
-        if (payload.settings.tabPopups) s.tabPopups = payload.settings.tabPopups === 'allow' ? 'allow' : 'block';
+        if (payload.settings.tabPopups) s.tabPopups = payload.settings.tabPopups === 'block' ? 'block' : 'allow';
       }
 
       persist();

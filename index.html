@@ -400,10 +400,10 @@
           <label class="field">
             <span>页签里的新窗口</span>
             <select id="s-tabpop">
-              <option value="block">拦截，留在页签内</option>
-              <option value="allow">允许弹出浏览器窗口</option>
+              <option value="allow">放行（推荐）</option>
+              <option value="block">拦掉，留在页签内</option>
             </select>
-            <small class="hint">有些系统用 target="_blank" 打开子页面，拦截后点了没反应，那种情况切到「允许」。</small>
+            <small class="hint">内网系统常用 target="_blank" 开子页面。拦掉会让它「点了没反应」，所以默认放行：点开的子页面会出现在浏览器新标签里。</small>
           </label>
         </section>
 
@@ -545,10 +545,20 @@
   <div class="tabbar">
     <div class="tablist" id="tabList"></div>
     <div class="tabtools">
-      <button class="tabtool tab-new" id="tabNew" type="button" title="再开一个服务">＋ 打开服务</button>
-      <button class="tabtool" id="tabReload" type="button" title="刷新当前页">刷新</button>
-      <button class="tabtool" id="tabPopup" type="button" title="在新标签页打开">新窗口</button>
-      <button class="tabtool" id="tabCloseAll" type="button" title="关闭全部页标签">关闭全部</button>
+      <button class="tabtool tab-new" id="tabNew" type="button" title="打开其他服务">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"></path></svg>
+        <span>服务</span>
+      </button>
+      <i class="tabsep"></i>
+      <button class="tabtool" id="tabReload" type="button" title="刷新当前页">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 11a8.2 8.2 0 1 0-2.4 5.8"></path><path d="M20.2 4.4V11h-6.4"></path></svg>
+      </button>
+      <button class="tabtool" id="tabPopup" type="button" title="在新标签页打开">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h5.5v5.5"></path><path d="M20 4l-8.2 8.2"></path><path d="M18.5 14v5a1.5 1.5 0 0 1-1.5 1.5H5.5A1.5 1.5 0 0 1 4 19V7.5A1.5 1.5 0 0 1 5.5 6H11"></path></svg>
+      </button>
+      <button class="tabtool tab-close" id="tabCloseAll" type="button" title="关闭全部页签">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"></path></svg>
+      </button>
     </div>
   </div>
   <div class="tabpick" id="tabPick" hidden>
@@ -557,6 +567,7 @@
   </div>
   <div class="tabframes" id="tabFrames"></div>
 </div>
+
 
 <div class="toast" id="toast" hidden></div>
 

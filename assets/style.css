@@ -2512,9 +2512,9 @@ html[data-theme="dark"] .probe-res.warn { color: #ff9ba2; }
 .tabhost { position: static; }
 .tabhost[hidden] { display: none !important; }
 
-/* 页签栏常驻顶部：回门户也留着，能看见开了多少个 */
-body.has-tabs { --tab-h: 48px; }
+body.has-tabs { --tab-h: 46px; }
 body.has-tabs .nav { top: var(--tab-h); }
+.nav { transition: top .3s var(--ease); }
 
 .tabbar {
   position: fixed;
@@ -2525,16 +2525,24 @@ body.has-tabs .nav { top: var(--tab-h); }
   display: flex;
   align-items: center;
   gap: 10px;
-  height: var(--tab-h, 48px);
-  padding: 0 10px;
-  background: var(--card);
+  height: var(--tab-h, 46px);
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--card) 76%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
   border-bottom: 1px solid var(--line);
+  animation: tabbarIn .32s var(--ease) both;
+}
+
+@keyframes tabbarIn {
+  from { transform: translateY(-100%); opacity: .35; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 .tablist {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex: 1;
   min-width: 0;
   overflow-x: auto;
@@ -2543,61 +2551,132 @@ body.has-tabs .nav { top: var(--tab-h); }
 .tablist::-webkit-scrollbar { display: none; }
 
 .tabitem {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   max-width: 190px;
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid transparent;
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
   border-radius: 8px;
-  background: var(--field);
+  background: transparent;
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: 12.5px;
   font-family: inherit;
-  cursor: pointer;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background .18s var(--ease), color .18s var(--ease);
 }
+
+.tabitem:hover { background: var(--field); color: var(--ink-2); }
 
 .tabitem.on {
   background: var(--card);
-  border-color: var(--line-2);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgba(16, 24, 32, .06);
+  box-shadow: 0 1px 2px rgba(10, 18, 24, .1), 0 0 0 1px var(--line);
 }
 
-.tabitem > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* 当前页签底下压一道品牌色，扫一眼就知道在哪 */
+.tabitem.on::after {
+  content: "";
+  position: absolute;
+  left: 11px;
+  right: 11px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--brand);
+  animation: tabline .24s var(--ease) both;
 }
+
+@keyframes tabline {
+  from { transform: scaleX(.2); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+
+.tabitem > span { overflow: hidden; text-overflow: ellipsis; }
+
+.tabico {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  opacity: .7;
+}
+.tabico svg { width: 14px; height: 14px; }
+.tabitem.on .tabico { opacity: 1; color: var(--brand); }
 
 .tabx {
   font-style: normal;
   font-size: 10px;
-  opacity: .45;
-  padding: 2px 1px;
+  line-height: 1;
+  padding: 2px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity .15s var(--ease), background .15s var(--ease);
 }
-.tabx:hover { opacity: 1; }
+.tabitem:hover .tabx,
+.tabitem.on .tabx { opacity: .45; }
+.tabx:hover { opacity: 1; background: var(--line); }
+
+.tabitem.in { animation: tabIn .26s var(--ease) both; }
+@keyframes tabIn {
+  from { opacity: 0; transform: translateY(-8px) scale(.92); }
+  to { opacity: 1; transform: none; }
+}
+
+.tabitem.out { animation: tabOut .18s var(--ease) both; pointer-events: none; }
+@keyframes tabOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-6px) scale(.9); }
+}
 
 .tabtools {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   flex-shrink: 0;
 }
 
+.tabsep {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--line-2);
+}
+
 .tabtool {
-  height: 30px;
-  padding: 0 11px;
-  border: 1px solid var(--line);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
   border-radius: 8px;
-  background: var(--card);
-  color: var(--ink-2);
-  font-size: 12.5px;
+  background: transparent;
+  color: var(--ink-3);
   font-family: inherit;
   cursor: pointer;
+  transition: background .16s var(--ease), color .16s var(--ease);
 }
-.tabtool:hover { border-color: var(--line-2); color: var(--ink); }
+.tabtool svg { width: 15px; height: 15px; }
+.tabtool:hover { background: var(--field); color: var(--ink); }
+
+.tabtool.tab-new {
+  width: auto;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+.tabtool.tab-new:hover { background: color-mix(in srgb, var(--brand) 20%, transparent); color: var(--brand); }
+.tabtool.tab-new svg { width: 13px; height: 13px; }
+
+.tabtool.tab-close:hover { color: var(--danger); }
 
 .tabframes {
   position: fixed;
