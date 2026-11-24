@@ -1,14 +1,76 @@
 {
   "name": "portal-desktop",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
-  "description": "企业服务大厅 · 桌面壳",
+  "description": "企业服务大厅 · 桌面客户端",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "start:dev": "electron . --dev"
+    "start:dev": "electron . --dev",
+    "build": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "^33.2.0"
+    "7zip-bin": "^5.2.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "cn.szwl.portal",
+    "productName": "企业服务大厅",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "host-preload.js",
+      "guest-preload.js",
+      "build/icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../",
+        "to": "app-root",
+        "filter": [
+          "server.js",
+          "package.json",
+          "index.html",
+          "login.html",
+          "users.html",
+          "assets/**/*",
+          "deploy/**/*",
+          "README.md"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "企业服务大厅",
+      "artifactName": "portal-setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "portal-portable-${version}.exe"
+    }
   }
 }

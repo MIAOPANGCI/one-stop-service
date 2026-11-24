@@ -193,6 +193,11 @@ const notes = NOTES_ARG || [
   '',
   prevTag ? `从 ${prevTag} 升级。` : '',
   '',
+  '## 桌面客户端',
+  '',
+  '附件里的 portal-setup-x.y.z.exe 是 Windows 安装包（内置浏览器内核，能打开禁止被 iframe 内嵌的系统）；',
+  'portal-portable-x.y.z.exe 是免安装版，解压即用。',
+  '',
   '## 升级方式',
   '',
   '**方式一（推荐）**：在大厅「设置 → 检查更新」里点「立即更新」，会自动下载、替换并重启，`data/` 和 `config.json` 原样保留。',
@@ -225,14 +230,36 @@ release = await api('POST', `/repos/${SLUG}/releases`, {
 });
 ok('Release 已创建：' + release.html_url);
 
-/* 6. 上传 zip */
-step('上传安装包');
-const bin = fs.readFileSync(zipPath);
-const asset = await api('POST',
-  `https://uploads.github.com/repos/${SLUG}/releases/${release.id}/assets?name=${encodeURIComponent(zipName)}`,
-  { token, raw: bin, contentType: 'application/zip' }
-);
-ok('已上传：' + asset.browser_download_url);
+/* 6. 上传附件：源码包 + 桌面端安装包（如果打过） */
+step('上传附件');
+
+async function uploadAsset(filePath, name, contentType) {
+  const bin = fs.readFileSync(filePath);
+  const size = (bin.length / 1048576).toFixed(1);
+  process.stdout.write('  · ' + name + '  ' + size + ' MB … ');
+  const asset = await api('POST',
+    `https://uploads.github.com/repos/${SLUG}/releases/${release.id}/assets?name=${encodeURIComponent(name)}`,
+    { token, raw: bin, contentType }
+  );
+  console.log('ok');
+  return asset;
+}
+
+const uploaded = [];
+uploaded.push(await uploadAsset(zipPath, zipName, 'application/zip'));
+
+const distDir = path.join(ROOT, 'desktop', 'dist');
+if (fs.existsSync(distDir)) {
+  const exes = fs.readdirSync(distDir).filter(f => /\.exe$/i.test(f));
+  for (const f of exes) {
+    uploaded.push(await uploadAsset(path.join(distDir, f), f, 'application/octet-stream'));
+  }
+  if (!exes.length) warn('desktop/dist 里没有 exe，跳过桌面端附件');
+} else {
+  warn('没有 desktop/dist，跳过桌面端附件');
+}
+
+ok('共上传 ' + uploaded.length + ' 个文件');
 
 console.log('\n  ------------------------------------------');
 console.log('  发布完成 ' + tag);

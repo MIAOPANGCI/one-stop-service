@@ -154,7 +154,33 @@ npm start          # 或双击 desktop/start.bat
 - 页签里的 `window.open` 由主进程拦截，转成应用内新页签
 - 编辑服务时的「不内嵌」标记只对网页版生效，桌面端会忽略它
 
-还没做：打包成 exe（`electron-builder`）、自动更新、图标。
+### 打包成 exe
+
+```bash
+npm run build:desktop
+```
+
+会先把根 `package.json` 的版本号同步给 `desktop/package.json`，再交给 electron-builder。产物在 `desktop/dist/`：
+
+| 文件 | 用途 |
+|---|---|
+| `portal-setup-x.y.z.exe` | 安装包，装一次带桌面快捷方式，推荐 |
+| `portal-portable-x.y.z.exe` | 绿色版，双击即用，不写注册表 |
+
+第一次构建会下载 NSIS、winCodeSign 等工具，走 `ELECTRON_BUILDER_BINARIES_MIRROR` 指向的镜像（脚本里默认 npmmirror）。
+
+**没做代码签名**，同事第一次运行会看到 SmartScreen 提示，点「更多信息 → 仍要运行」即可。内网分发可以接受。
+
+### 数据与更新
+
+打包后后端代码在安装目录的 `resources/app-root`（只读），**数据写到 `%APPDATA%\\企业服务大厅\\data`**，卸载不会删。菜单「文件 → 打开数据目录」可以直接打开。
+
+更新有两条路：
+
+- 启动 5 秒后静默查一次 GitHub Release，连不上就跳过
+- 菜单「帮助 → 检查更新」手动查，发现新版本可以「下载并安装」（下到临时目录，装完自动重启）
+
+菜单里还有「关于」，显示应用 / Electron / Chromium / Node 版本和数据目录。
 
 ## 配置
 

@@ -39,14 +39,19 @@ const VERSION = (function () {
 /* 更新检查指向的仓库 */
 const REPO_SLUG = 'MIAOPANGCI/one-stop-service';
 const UPDATE_TTL = 30 * 60 * 1000;   // 30 分钟内复用结果，避免打爆 GitHub 限流
-const DATA_DIR = path.join(ROOT, 'data');
+/* 桌面客户端把数据放到 %APPDATA%，安装目录通常是只读的 */
+const DATA_DIR = process.env.PORTAL_DATA_DIR
+  ? path.resolve(process.env.PORTAL_DATA_DIR)
+  : path.join(ROOT, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'portal.json');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const BACKUP_KEEP = 40;
 
 /* ---------- 启动配置：命令行 > 环境变量 > config.json ---------- */
-const CONFIG_FILE = path.join(ROOT, 'config.json');
+const CONFIG_FILE = process.env.PORTAL_CONFIG
+  ? path.resolve(process.env.PORTAL_CONFIG)
+  : path.join(ROOT, 'config.json');
 
 function getArg(name) {
   const i = process.argv.indexOf(name);
