@@ -1233,32 +1233,71 @@
 
   function doImport(file) {
     var reader = new FileReader();
-    reader.onload = function () {
-      var data;
-      try { data = JSON.parse(String(reader.result)); }
-      catch (e) { toast('文件不是合法的 JSON'); return; }
 
-      var arr = data && data.links ? data.links : (data && data.state && data.state.links);
-      if (!Array.isArray(arr)) { toast('文件里找不到 links 字段'); return; }
+    reader.onload = function () {
+      var buf = reader.result;
+      var head = new Uint8Array(buf.slice(0, 4));
+      var isZip = /\.zip$/i.test(file.name || '') ||
+        (head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4);
+
+      var data = null;
+      if (!isZip) {
+        try { data = JSON.parse(new TextDecoder('utf-8').decode(buf)); }
+        catch (e) { toast('文件不是合法的 JSON'); return; }
+      }
+
+      var arr = data && data.links ? data.links : (data && data.state ? data.state.links : null);
+      if (!isZip && !Array.isArray(arr)) { toast('文件里找不到 links 字段'); return; }
 
       askConfirm({
         title: '导入会覆盖现有数据',
-        text: '服务器上现有的 ' + state.links.length + ' 个服务将被文件中的 ' + arr.length + ' 个替换，此操作无法撤销。',
+        text: '服务器上现有的 ' + state.links.length + ' 个服务将被' +
+          (isZip ? '压缩包里的服务' : '文件中的 ' + arr.length + ' 个服务') + '替换，此操作无法撤销。',
         okText: '覆盖导入',
         danger: true
       }).then(function (yes) {
         if (!yes) return;
-        mutate('POST', '/api/import', data, '已导入 ' + arr.length + ' 条数据').then(function (ok) {
-          if (!ok) return;
+
+        var done = function (msg) {
           activeCat = '全部';
           keyword = '';
           $('#searchInput').value = '';
           closeModal($('#setModal'));
           render();
+          if (msg) toast(msg);
+        };
+
+        if (isZip) {
+          // zip 里带图片，走二进制，不能用 mutate 的 JSON 封装
+          fetch('/api/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/zip' },
+            body: file,
+            cache: 'no-store'
+          })
+            .then(function (r) {
+              return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+            })
+            .then(function (res) {
+              if (!res.ok || !res.d || !res.d.ok) throw new Error((res.d && res.d.error) || '导入失败');
+              applyPayload(res.d);
+              done('已导入 ' + res.d.imported + ' 个服务' +
+                (res.d.images ? '、' + res.d.images + ' 张图片' : ''));
+              if (res.d.missing) {
+                setTimeout(function () { toast('有 ' + res.d.missing + ' 个图片不在包里，可能显示不出来'); }, 1900);
+              }
+            })
+            .catch(function (e) { toast(e.message || '导入失败'); });
+          return;
+        }
+
+        mutate('POST', '/api/import', data, '已导入 ' + arr.length + ' 条数据').then(function (ok) {
+          if (ok) done();
         });
       });
     };
-    reader.readAsText(file);
+
+    reader.readAsArrayBuffer(file);
   }
 
   /* ---------------- Toast ---------------- */

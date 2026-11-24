@@ -626,7 +626,8 @@ function checkUpdate(force) {
 const UPDATE_DIR = path.join(DATA_DIR, 'update');
 
 /* 只认 store / deflate 两种压缩方式，够用且不用依赖 */
-function unzipTo(buf, destDir) {
+/* 读 zip 到内存：只支持 store / deflate，够用且不用引依赖 */
+function readZip(buf) {
   const zlib = require('zlib');
 
   let eocd = -1;
@@ -637,8 +638,9 @@ function unzipTo(buf, destDir) {
   if (eocd < 0) throw new Error('不是有效的 zip 文件');
 
   const count = buf.readUInt16LE(eocd + 10);
+  if (count > 600) throw new Error('压缩包里文件太多');
   let off = buf.readUInt32LE(eocd + 16);
-  const entries = [];
+  const list = [];
 
   for (let i = 0; i < count; i++) {
     if (buf.readUInt32LE(off) !== 0x02014b50) break;
@@ -648,12 +650,15 @@ function unzipTo(buf, destDir) {
     const extraLen = buf.readUInt16LE(off + 30);
     const cmtLen = buf.readUInt16LE(off + 32);
     const lho = buf.readUInt32LE(off + 42);
-    const name = buf.toString('utf8', off + 46, off + 46 + nameLen);
-    entries.push({ name, method, csize, lho });
+    const name = buf.toString('utf8', off + 46, off + 46 + nameLen).replace(/\\/g, '/');
+    list.push({ name, method, csize, lho });
     off += 46 + nameLen + extraLen + cmtLen;
   }
 
-  entries.forEach(function (e) {
+  const out = [];
+  let total = 0;
+
+  list.forEach(function (e) {
     if (/\/$/.test(e.name)) return;
     if (e.name.indexOf('..') > -1 || e.name.charAt(0) === '/') {
       throw new Error('压缩包内含非法路径：' + e.name);
@@ -669,9 +674,114 @@ function unzipTo(buf, destDir) {
     else if (e.method === 8) data = zlib.inflateRawSync(raw);
     if (!data) return;
 
+    total += data.length;
+    if (total > 64 * 1024 * 1024) throw new Error('压缩包解压后过大');
+
+    out.push({ name: e.name, data: data });
+  });
+
+  return out;
+}
+
+function unzipTo(buf, destDir) {
+  readZip(buf).forEach(function (e) {
     const target = path.join(destDir, e.name);
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, data);
+    fs.writeFileSync(target, e.data);
+  });
+}
+
+/* ---------------- 打 zip：只做 store，不压缩 ---------------- */
+
+const CRC_TABLE = (function () {
+  const t = new Int32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c;
+  }
+  return t;
+})();
+
+function crc32(buf) {
+  let c = -1;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+
+function zipStore(entries) {
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2)) & 0xffff;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xffff;
+
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+
+  entries.forEach(function (e) {
+    const name = Buffer.from(e.name, 'utf8');
+    const data = e.data;
+    const crc = crc32(data);
+
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50, 0);
+    lh.writeUInt16LE(20, 4);
+    lh.writeUInt16LE(0x0800, 6);      // 文件名按 UTF-8 解释
+    lh.writeUInt16LE(0, 8);           // store
+    lh.writeUInt16LE(dosTime, 10);
+    lh.writeUInt16LE(dosDate, 12);
+    lh.writeUInt32LE(crc, 14);
+    lh.writeUInt32LE(data.length, 18);
+    lh.writeUInt32LE(data.length, 22);
+    lh.writeUInt16LE(name.length, 26);
+    lh.writeUInt16LE(0, 28);
+    locals.push(lh, name, data);
+
+    const ch = Buffer.alloc(46);
+    ch.writeUInt32LE(0x02014b50, 0);
+    ch.writeUInt16LE(20, 4);
+    ch.writeUInt16LE(20, 6);
+    ch.writeUInt16LE(0x0800, 8);
+    ch.writeUInt16LE(0, 10);
+    ch.writeUInt16LE(dosTime, 12);
+    ch.writeUInt16LE(dosDate, 14);
+    ch.writeUInt32LE(crc, 16);
+    ch.writeUInt32LE(data.length, 20);
+    ch.writeUInt32LE(data.length, 24);
+    ch.writeUInt16LE(name.length, 28);
+    ch.writeUInt32LE(offset, 42);
+    centrals.push(ch, name);
+
+    offset += 30 + name.length + data.length;
+  });
+
+  const centralBuf = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(centralBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+
+  return Buffer.concat([Buffer.concat(locals), centralBuf, eocd]);
+}
+
+/* 导入要收整包图片，得单独放宽体积上限 */
+function readBody(req, limit) {
+  return new Promise(function (resolve, reject) {
+    let size = 0;
+    const chunks = [];
+    req.on('data', function (c) {
+      size += c.length;
+      if (size > limit) {
+        reject(new Error('文件太大，超过 ' + Math.round(limit / 1048576) + ' MB'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', function () { resolve(Buffer.concat(chunks)); });
+    req.on('error', reject);
   });
 }
 
@@ -1505,32 +1615,77 @@ const server = http.createServer(function (req, res) {
     }
   }
 
-  /* ---------- 导出 ---------- */
+  /* ---------- 导出（打包成 zip，带上正在用的图片） ---------- */
   if (pathname === '/api/export' && method === 'GET') {
     if (!needRole(['admin', 'editor'])) return;
+
     const clone = JSON.parse(JSON.stringify(db));
     clone.users = clone.users.map(publicUser);   // 绝不导出密码哈希
-    const body = Buffer.from(JSON.stringify(clone, null, 2), 'utf8');
-    const d = new Date();
-    const name = 'portal-backup-' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '.json';
-    res.writeHead(200, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Content-Length': body.length,
-      'Content-Disposition': 'attachment; filename="' + name + '"'
+
+    const files = [{
+      name: 'portal.json',
+      data: Buffer.from(JSON.stringify(clone, null, 2), 'utf8')
+    }];
+
+    // 只带「正在被引用」的图片：Logo、两张壁纸、服务图标。
+    // 不带的话换台机器恢复出来全是裂图，带了又可能把一堆废弃文件塞进备份。
+    let dropped = 0;
+    uploadRefs().forEach(function (name) {
+      try {
+        const p = path.join(UPLOAD_DIR, name);
+        const st = fs.statSync(p);
+        if (!st.isFile() || st.size > 8 * 1024 * 1024) { dropped++; return; }
+        files.push({ name: 'uploads/' + name, data: fs.readFileSync(p) });
+      } catch (e) { dropped++; }
     });
-    res.end(body);
+
+    const zip = zipStore(files);
+    const d = new Date();
+    const fname = 'portal-backup-' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '.zip';
+
+    res.writeHead(200, {
+      'Content-Type': 'application/zip',
+      'Content-Length': zip.length,
+      'Content-Disposition': 'attachment; filename="' + fname + '"'
+    });
+    res.end(zip);
+    if (dropped) console.log('[导出] 有 ' + dropped + ' 个图片没找到或超过 8MB，已跳过');
     return;
   }
 
-  /* ---------- 导入 ---------- */
+  /* ---------- 导入（支持本次导出的 zip，也兼容老的 json） ---------- */
   if (pathname === '/api/import' && method === 'POST') {
     if (!needRole(['admin', 'editor'])) return;
-    readJson(req).then(function (body) {
-      const src = body && body.links ? body : (body && body.state ? body.state : null);
-      if (!src || !Array.isArray(src.links)) return deny(400, '导入文件格式不正确');
+
+    readBody(req, 64 * 1024 * 1024).then(function (buf) {
+      const isZip = buf.length > 4 && buf.readUInt32LE(0) === 0x04034b50;
+      const pics = [];
+      let src = null;
+
+      if (isZip) {
+        const entries = readZip(buf);
+        const jsonEntry =
+          entries.filter(function (e) { return /(^|\/)portal\.json$/i.test(e.name); })[0] ||
+          entries.filter(function (e) { return /\.json$/i.test(e.name) && e.name.indexOf('/') === -1; })[0];
+
+        if (!jsonEntry) throw new Error('压缩包里没有找到 portal.json');
+        try { src = JSON.parse(jsonEntry.data.toString('utf8')); }
+        catch (e) { throw new Error('压缩包里的 portal.json 解析失败'); }
+
+        entries.forEach(function (e) {
+          const m = /(?:^|\/)uploads\/([^/]+)$/.exec(e.name);
+          if (m) pics.push({ name: m[1], data: e.data });
+        });
+      } else {
+        try { src = JSON.parse(buf.toString('utf8')); }
+        catch (e) { throw new Error('JSON 格式错误'); }
+      }
+
+      const payload = src && src.links ? src : (src && src.state ? src.state : null);
+      if (!payload || !Array.isArray(payload.links)) throw new Error('导入文件格式不正确');
 
       const links = [];
-      src.links.forEach(function (raw) {
+      payload.links.forEach(function (raw) {
         const link = sanitizeLink(raw, {
           id: raw && raw.id ? String(raw.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || uid() : uid(),
           createdAt: nowIso(),
@@ -1538,32 +1693,57 @@ const server = http.createServer(function (req, res) {
         });
         if (link.name && (link.urlLan || link.urlWan)) links.push(link);
       });
-      if (!links.length) return deny(400, '没有可导入的有效数据');
+      if (!links.length) throw new Error('没有可导入的有效数据');
+
+      // 先落图片再写配置：配置里引用的文件名得能立刻打开
+      let images = 0;
+      pics.forEach(function (f) {
+        if (!/^[A-Za-z0-9._-]{1,80}$/.test(f.name)) return;
+        if (f.data.length > 8 * 1024 * 1024) return;
+        try {
+          fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+          fs.writeFileSync(path.join(UPLOAD_DIR, f.name), f.data);
+          images++;
+        } catch (e) {}
+      });
 
       db.links = links;
-      if (src.settings) {
+      if (payload.settings) {
         const s = db.settings;
-        if (src.settings.company) s.company = cleanText(src.settings.company, 24);
-        if (src.settings.companyEn) s.companyEn = cleanText(src.settings.companyEn, 48);
-        if (src.settings.slogan) s.slogan = cleanText(src.settings.slogan, 30);
-        if (src.settings.logo) s.logo = cleanText(src.settings.logo, 2);
-        if (src.settings.logoImage) s.logoImage = cleanUrl(src.settings.logoImage);
-        if (src.settings.brandColor) s.brandColor = cleanHexColor(src.settings.brandColor, '#2fa795');
-        if (src.settings.heroImage) s.heroImage = cleanUrl(src.settings.heroImage);
-        if (src.settings.heroImageDark) s.heroImageDark = cleanUrl(src.settings.heroImageDark);
-        if (src.settings.heroFoot) s.heroFoot = cleanText(src.settings.heroFoot, 40);
-        if (src.settings.netMode) s.netMode = ['auto', 'lan', 'wan'].indexOf(src.settings.netMode) > -1 ? src.settings.netMode : 'auto';
-        if (Array.isArray(src.settings.probeUrls)) {
-          s.probeUrls = src.settings.probeUrls.map(function (u) { return cleanUrl(u); }).filter(Boolean).slice(0, 5);
+        if (payload.settings.company) s.company = cleanText(payload.settings.company, 24);
+        if (payload.settings.companyEn) s.companyEn = cleanText(payload.settings.companyEn, 48);
+        if (payload.settings.slogan) s.slogan = cleanText(payload.settings.slogan, 30);
+        if (payload.settings.logo) s.logo = cleanText(payload.settings.logo, 2);
+        if (payload.settings.logoImage) s.logoImage = cleanUrl(payload.settings.logoImage);
+        if (payload.settings.brandColor) s.brandColor = cleanHexColor(payload.settings.brandColor, '#2fa795');
+        if (payload.settings.heroImage) s.heroImage = cleanUrl(payload.settings.heroImage);
+        if (payload.settings.heroImageDark) s.heroImageDark = cleanUrl(payload.settings.heroImageDark);
+        if (payload.settings.heroFoot) s.heroFoot = cleanText(payload.settings.heroFoot, 40);
+        if (payload.settings.netMode) s.netMode = ['auto', 'lan', 'wan'].indexOf(payload.settings.netMode) > -1 ? payload.settings.netMode : 'auto';
+        if (Array.isArray(payload.settings.probeUrls)) {
+          s.probeUrls = payload.settings.probeUrls.map(function (u) { return cleanUrl(u); }).filter(Boolean).slice(0, 5);
         }
       }
+
       persist();
-      console.log('[数据] ' + (user ? user.username : '-') + ' 导入了 ' + links.length + ' 条服务');
-      sendJson(res, 200, statePayload());
+
+      // 配置引用了但包里没有的图片（多半是老的 json 备份），单独报出来
+      let missing = 0;
+      uploadRefs().forEach(function (name) {
+        if (!fs.existsSync(path.join(UPLOAD_DIR, name))) missing++;
+      });
+
+      console.log('[数据] ' + (user ? user.username : '-') + ' 导入了 ' + links.length +
+        ' 条服务，' + images + ' 张图片');
+
+      const out = statePayload();
+      out.imported = links.length;
+      out.images = images;
+      out.missing = missing;
+      sendJson(res, 200, out);
     }).catch(function (e) { deny(400, e.message); });
     return;
   }
-
   /* ==================== 用户管理（仅管理员） ==================== */
 
   if (pathname === '/api/users' && method === 'GET') {
