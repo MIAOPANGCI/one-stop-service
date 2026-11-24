@@ -463,6 +463,24 @@
                                     <small class="hint">每行一个，能连上任意一个即判定为内网。填内网网关，或任意只有内网能打开的地址；只响应 ping、没开网页端口的设备不行（浏览器发不了 ICMP），这种情况点「用本机内网地址」。</small>
                                   </label>
                                 </section>
+
+        <section class="set-sec" id="deskSec" hidden>
+                                  <div class="group-label">桌面客户端</div>
+
+                                  <div class="field">
+                                    <span>连接的服务端</span>
+                                    <div class="server-row">
+                                      <input id="s-server" type="text" autocomplete="off" spellcheck="false" placeholder="留空 = 本机 8080，或 http://192.168.3.20:8080">
+                                      <button class="btn-line sm" id="serverSaveBtn" type="button">保存</button>
+                                    </div>
+                                    <small class="hint">桌面版只当一个「壳」，数据都存在服务端这一份里，和网页版看到的是同一批。改完要重启客户端。</small>
+                                  </div>
+
+                                  <div class="field">
+                                    <span>当前连接</span>
+                                    <small class="hint" id="serverNow">—</small>
+                                  </div>
+                                </section>
       </div>
 
       <div class="set-pane" data-pane="5" hidden>

@@ -77,9 +77,10 @@ function ensureConfig(hasConfig) {
   if (hasConfig || fs.existsSync(CONFIG_FILE)) return;
   try {
     const sample = {
-      _说明: '改完保存并重启服务生效。host 填 0.0.0.0 局域网可访问，填 127.0.0.1 只有本机能访问；port 取值 1-65535。',
+      _说明: '改完保存并重启服务生效。host 填 0.0.0.0 局域网可访问，填 127.0.0.1 只有本机能访问；port 取值 1-65535；mode 取 both / web / desktop。',
       port: 8080,
-      host: '0.0.0.0'
+      host: '0.0.0.0',
+      mode: 'both'
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(sample, null, 2) + '\n', 'utf8');
   } catch (e) {}
@@ -95,6 +96,26 @@ ensureConfig(CFG);
 
 const PORT = pickPort(getArg('--port')) || pickPort(process.env.PORT) || pickPort(CFG && CFG.port) || 8080;
 const HOST = String(getArg('--host') || process.env.HOST || (CFG && CFG.host) || '0.0.0.0').trim();
+
+/* ------------------------------------------------------------------
+ * 启动模式（--mode / PORTAL_MODE / config.json 里的 mode）
+ *
+ *   both     网页版和桌面客户端都能连（默认）
+ *   web      只给网页版用，桌面客户端的请求一律拒掉
+ *   desktop  只给桌面客户端用，浏览器打开看到一句提示
+ *
+ * 注意：模式只决定「谁能连进来」，数据永远只有这一份（DATA_DIR），
+ * 不存在网页版一套、桌面版一套的情况。
+ * ------------------------------------------------------------------ */
+const MODE = (function () {
+  const raw = String(getArg('--mode') || process.env.PORTAL_MODE || (CFG && CFG.mode) || 'both')
+    .trim().toLowerCase();
+  return raw === 'web' || raw === 'desktop' ? raw : 'both';
+})();
+
+const DESKTOP_UA = /CorpPortalDesktop\//i;
+const MODE_LABEL = { both: '网页版 + 桌面客户端', web: '仅网页版', desktop: '仅桌面客户端' };
+
 
 /* 本机在局域网里的地址。前端拿它判断"人在不在内网"：
    这些地址外网访问不到，能连上就说明在内部网络里。
@@ -1296,6 +1317,40 @@ const server = http.createServer(function (req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   if (method === 'OPTIONS') { res.writeHead(204).end(); return; }
 
+  /* ---------- 启动模式：只让该进来的人进来 ---------- */
+  if (MODE !== 'both') {
+    const fromDesktop = DESKTOP_UA.test(String(req.headers['user-agent'] || ''));
+    const blocked = MODE === 'desktop' ? !fromDesktop : fromDesktop;
+
+    if (blocked) {
+      const msg = MODE === 'desktop'
+        ? '这个服务端只对桌面客户端开放，请用「企业服务大厅」客户端访问。要同时开放网页版，把启动参数改成 --mode both。'
+        : '这个服务端只给网页版使用，桌面客户端请连接 --mode desktop 或 --mode both 的实例。';
+
+      if (pathname.indexOf('/api/') === 0) {
+        sendJson(res, 403, { ok: false, mode: MODE, error: msg });
+      } else {
+        const body = '<!doctype html><meta charset="utf-8"><title>无权访问</title>' +
+          '<body style="margin:0;display:grid;place-items:center;height:100vh;' +
+          'font:14px/1.9 \'Microsoft YaHei\',system-ui;color:#33404d;background:#f6f8fa">' +
+          '<div style="max-width:520px;padding:28px 32px;background:#fff;border-radius:14px;' +
+          'box-shadow:0 18px 44px -24px rgba(16,24,40,.4)">' +
+          '<h2 style="margin:0 0 10px;font-size:16px">当前实例不接收这类访问</h2>' +
+          '<p style="margin:0;color:#5a6672">' + msg + '</p>' +
+          '<p style="margin:14px 0 0;font-size:12.5px;color:#8b95a1">当前模式：' + MODE + '</p>' +
+          '</div></body>';
+        const buf = Buffer.from(body, 'utf8');
+        res.writeHead(403, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Length': buf.length,
+          'Cache-Control': 'no-store'
+        });
+        res.end(buf);
+      }
+      return;
+    }
+  }
+
   if (pathname.indexOf('/uploads/') === 0) {
     serveUpload(req, res, pathname);
     return;
@@ -1311,7 +1366,7 @@ const server = http.createServer(function (req, res) {
   const statePayload = function () {
     return {
       ok: true,
-      state: { settings: db.settings, links: db.links, version: VERSION, lan: lanUrls() },
+      state: { settings: db.settings, links: db.links, version: VERSION, lan: lanUrls(), mode: MODE },
       user: user ? publicUser(user) : null,
       roles: ROLE_LABEL
     };
@@ -1325,7 +1380,7 @@ const server = http.createServer(function (req, res) {
   if (pathname === '/api/ping' && method === 'GET') {
     const s = db.settings;
     sendJson(res, 200, {
-      ok: true, name: 'corp-portal', version: VERSION, links: db.links.length, lan: lanUrls(),
+      ok: true, name: 'corp-portal', version: VERSION, links: db.links.length, lan: lanUrls(), mode: MODE,
       users: db.users.length, requireLogin: s.requireLogin !== false,
       uptime: Math.round(process.uptime()),
       // 只暴露登录页需要的品牌信息，不含任何业务数据
@@ -1981,6 +2036,8 @@ server.listen(PORT, HOST, function () {
   }
 
   console.log('  监听地址 : ' + HOST + ':' + PORT);
+  console.log('  启动模式 : ' + MODE_LABEL[MODE] + (MODE === 'both' ? '' :
+    (MODE === 'web' ? '（桌面客户端连不进来）' : '（浏览器打开会被拒绝）')));
   console.log('  配置文件 : ' + CONFIG_FILE);
   console.log('  数据文件 : ' + DATA_FILE);
   console.log('  用户数量 : ' + db.users.length);

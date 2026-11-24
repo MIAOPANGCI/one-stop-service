@@ -26,9 +26,14 @@ if (deskPkg.version !== rootPkg.version) {
   console.log('  版本同步为 ' + rootPkg.version);
 }
 
+// 图标是拿 desktop/build/icon-src.png 现算的，没有就补一次
 if (!fs.existsSync(path.join(DESK, 'build', 'icon.ico'))) {
-  console.error('\n  ✗ 缺少 desktop/build/icon.ico，先跑一次 desktop/make-icon.ps1 再转 ico\n');
-  process.exit(1);
+  console.log('  图标不存在，先从 icon-src.png 生成');
+  const ic = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'make-icon.mjs')], { stdio: 'inherit' });
+  if (ic.status !== 0) {
+    console.error('\n  ✗ 生成图标失败，检查 desktop/build/icon-src.png\n');
+    process.exit(1);
+  }
 }
 
 if (!fs.existsSync(path.join(DESK, 'node_modules', 'electron-builder'))) {

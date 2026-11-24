@@ -18,6 +18,28 @@ npm start            # 或双击 start.bat
 
 壳会自动拉起仓库根目录的 `server.js`（8080 已经在跑就直接复用），退出时收走子进程。调试用 `npm run start:dev`，会额外打开 DevTools。
 
+## 连哪个服务端
+
+壳默认连本机 `http://127.0.0.1:8080`，端口上已经有服务端就直接复用 —— 所以网页版和桌面版看到的是**同一份数据**，不存在两边各存一套。
+
+要连别的机器（同事的、服务器的）：
+
+- 门户里「设置 → 打开与网络 → 桌面客户端」，填 `http://192.168.3.20:8080`，保存后重启客户端
+- 或者环境变量 `PORTAL_SERVER=http://192.168.3.20:8080`
+- 忘掉地址连不上时，菜单「文件 → 改回本机服务端」兜底
+
+配了远端地址之后，壳**不会**在本地偷偷起一个后端，连不上就直说 —— 免得又造出一份平行的数据。
+
+服务端启动模式决定谁能连（见根 README 的「启动方式」）：
+
+| 服务端 `--mode` | 浏览器 | 桌面客户端 |
+|---|---|---|
+| `both`（默认） | ✓ | ✓ |
+| `web` | ✓ | ✗ 403 |
+| `desktop` | ✗ 403 | ✓ |
+
+桌面客户端请求会带 `CorpPortalDesktop/<版本>` 的 UA，服务端据此区分。
+
 ## 打包
 
 ```bash
@@ -58,7 +80,9 @@ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-
 
 ## 数据与更新
 
-打包后后端代码在安装目录的 `resources/app-root`（只读），**数据写到 `%APPDATA%\portal-desktop\data`**，卸载不删。菜单「文件 → 打开数据目录」可直接打开。
+打包后后端代码在安装目录的 `resources/app-root`（只读），所以壳自己兜底起后端时，数据写到 `%APPDATA%\portal-desktop\data`，卸载不删。菜单「文件 → 打开数据目录」可直接打开。
+
+注意这个目录只在「本机没有服务端、由壳兜底」时才用到。只要本机 8080（或你配的服务端地址）上已经有服务端，数据就存在那台服务端的 `data/` 里，网页版和桌面版读的是同一个文件。
 
 更新有两条路：启动 5 秒后静默查一次 GitHub Release；菜单「帮助 → 检查更新」手动查，发现新版可「下载并安装」（下到临时目录，装完自动重启）。
 
@@ -72,7 +96,26 @@ PORTAL_NO_SHIM=1 npm start
 
 ## 图标
 
-`make-icon.ps1` 用 System.Drawing 画一个 256×256 的青底「万」字 PNG，再手工包成 ICO（PNG-in-ICO）。改了品牌色或名字，重跑脚本后重新生成 `build/icon.ico` 即可。
+图标从 `build/icon-src.png` 现算，不依赖第三方库：
+
+```bash
+node scripts/make-icon.mjs          # 也可以在 desktop/build 里换一张 icon-src.png 再跑
+```
+
+脚本自己解 PNG、按面积平均缩放（带 alpha 预乘，不会出黑边），输出 `build/icon.png`（256×256，窗口和关于窗口用）和 `build/icon.ico`（16/24/32/48/64/128/256，全是 32 位 BMP 帧，老 NSIS 也认）。`npm run build:desktop` 发现没有 ico 会自动补一次。
+
+## 菜单栏
+
+`视图 → 隐藏菜单栏`（Ctrl+Shift+M）关掉顶部那一行，设置存在 `%APPDATA%\portal-desktop\desktop-prefs.json`，下次启动保持。隐藏后按 **Alt** 还能临时叫出来。
+
+## 下载进度
+
+两种下载共用一个自绘的进度小窗，任务栏图标同时走 `setProgressBar`：
+
+- 客户端自身的更新包（主进程 https 直连）
+- 页签里（webview）点下载，走 `session.on('will-download')`
+
+完成/失败会走系统通知，点通知定位到文件。
 
 ## 前端怎么判断
 

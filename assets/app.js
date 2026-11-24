@@ -1327,7 +1327,24 @@
          (s.requireLogin === false ? ' · 游客可浏览' : ' · 需登录访问'))
       : '服务端未连接';
 
+    if (DESKTOP) loadServerInfo();
+
     openModal($('#setModal'));
+  }
+
+  /* ---------------- 桌面端：连哪个服务端 ---------------- */
+  function loadServerInfo() {
+    if (!DESKTOP || !window.desktopAPI.getServerInfo) return;
+    if ($('#deskSec')) $('#deskSec').hidden = false;
+
+    window.desktopAPI.getServerInfo().then(function (info) {
+      if (!$('#s-server')) return;
+      $('#s-server').value = info.configured ? info.origin : '';
+      $('#serverNow').textContent = '当前 ' + info.origin +
+        (info.local
+          ? ('（本机服务端，数据目录 ' + info.dataDir + '）')
+          : '（远端服务端，数据在对方机器上）');
+    }).catch(function () {});
   }
 
   /* ---------------- 检查更新 ---------------- */
@@ -1600,10 +1617,142 @@
     });
   }
 
+  /* ---------- 下载进度卡 ---------- */
+  /* 备份包动辄几 MB，点完到浏览器弹出下载条之间是全黑的：
+     用户不知道是在打包、在传、还是根本没点上。这里边收边显示。 */
+  function fmtSize(n) {
+    if (!isFinite(n) || n < 0) return '—';
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+    return (n / 1048576).toFixed(1) + ' MB';
+  }
+
+  function dlCard(name) {
+    var box = document.getElementById('dlStack');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'dl-stack';
+      box.id = 'dlStack';
+      document.body.appendChild(box);
+    }
+
+    var el = document.createElement('div');
+    el.className = 'dl-card';
+    el.innerHTML =
+      '<div class="dl-top">' +
+        '<span class="dl-name"></span>' +
+        '<span class="dl-pct">0%</span>' +
+      '</div>' +
+      '<div class="dl-bar"><i></i></div>' +
+      '<div class="dl-sub"><span class="dl-state">正在打包…</span><span class="dl-size"></span></div>';
+    el.querySelector('.dl-name').textContent = name;
+    box.appendChild(el);
+
+    requestAnimationFrame(function () { el.classList.add('show'); });
+
+    return {
+      node: el,
+      setName: function (v) { el.querySelector('.dl-name').textContent = v; },
+      set: function (p, state, size) {
+        var pct = Math.max(0, Math.min(100, Math.round(p * 100)));
+        el.querySelector('.dl-pct').textContent = pct + '%';
+        el.querySelector('.dl-bar i').style.width = pct + '%';
+        if (state) el.querySelector('.dl-state').textContent = state;
+        el.querySelector('.dl-size').textContent = size || '';
+      },
+      close: function (delay) {
+        setTimeout(function () {
+          el.classList.remove('show');
+          setTimeout(function () { el.parentNode && el.parentNode.removeChild(el); }, 260);
+        }, delay || 0);
+      }
+    };
+  }
+
+  function downloadWithProgress(url, fallbackName) {
+    var name = fallbackName || 'download';
+
+    // 没有流式读取的老内核就老老实实交给浏览器
+    if (!window.fetch || !window.AbortController || !window.ReadableStream) {
+      location.href = url;
+      return;
+    }
+
+    var card = dlCard(name);
+    var got = 0;
+    var total = 0;
+
+    function save(blob) {
+      var href = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = href;
+      a.download = name;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () {
+        URL.revokeObjectURL(href);
+        a.parentNode && a.parentNode.removeChild(a);
+      }, 1200);
+
+      card.node.classList.add('is-ok');
+      card.set(1, '已保存，可在下载文件夹查看', fmtSize(blob.size));
+      card.close(2800);
+    }
+
+    fetch(url, { cache: 'no-store' })
+      .then(function (res) {
+        if (!res.ok) throw new Error('服务器返回 HTTP ' + res.status);
+
+        var cd = res.headers.get('Content-Disposition') || '';
+        var m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+        if (m && m[1]) {
+          try {
+            name = decodeURIComponent(m[1].trim());
+            card.setName(name);
+          } catch (e) {}
+        }
+
+        total = parseInt(res.headers.get('Content-Length') || '0', 10) || 0;
+
+        if (!res.body || !res.body.getReader) return res.blob().then(save);
+
+        var reader = res.body.getReader();
+        var chunks = [];
+        var type = res.headers.get('Content-Type') || 'application/octet-stream';
+
+        card.set(0, '正在接收…', total ? ('0 / ' + fmtSize(total)) : '');
+
+        (function pump() {
+          return reader.read().then(function (r) {
+            if (r.done) return save(new Blob(chunks, { type: type }));
+
+            chunks.push(r.value);
+            got += r.value.length;
+
+            if (total) {
+              card.set(got / total,
+                got >= total ? '正在保存…' : '正在接收…',
+                fmtSize(got) + ' / ' + fmtSize(total));
+            } else {
+              // 没给长度就按「已接收多少」显示，进度条只走到 95%
+              card.set(Math.min(0.95, got / (got + 2 * 1048576)), '正在接收…', fmtSize(got));
+            }
+
+            return pump();
+          });
+        })();
+      })
+      .catch(function (e) {
+        card.node.classList.add('is-err');
+        card.set(0, (e && e.message) || '下载失败', '');
+        card.close(5000);
+      });
+  }
+
   function doExport() {
     if (!online) { toast('未连接服务端'); return; }
-    window.location.href = '/api/export';
-    toast('正在下载备份文件');
+    downloadWithProgress('/api/export', 'portal-backup.zip');
   }
 
   function doImport(file) {
@@ -2201,6 +2350,27 @@
     });
     $('#checkUpdateBtn').addEventListener('click', checkUpdate);
     $('#sweepBtn').addEventListener('click', doSweepUploads);
+
+    if (DESKTOP && $('#serverSaveBtn')) {
+      $('#deskSec').hidden = false;
+      loadServerInfo();
+
+      $('#serverSaveBtn').addEventListener('click', function () {
+        var v = $('#s-server').value.trim();
+        window.desktopAPI.setServer(v).then(function () {
+          askConfirm({
+            title: '服务端地址已保存',
+            text: '改成了 ' + (v || '本机默认 127.0.0.1') + '，重启客户端后生效。',
+            okText: '立即重启',
+            cancelText: '稍后',
+            kind: 'info'
+          }).then(function (yes) {
+            if (yes) window.desktopAPI.relaunch();
+            else loadServerInfo();
+          });
+        }).catch(function () { toast('保存失败'); });
+      });
+    }
 
     $('#updBox').addEventListener('click', function (e) {
       var b = e.target.closest('#doUpdateBtn');
