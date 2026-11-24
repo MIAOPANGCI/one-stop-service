@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 · 企业服务大厅</title>
+<script>(function(){var m=null,t=null;try{m=localStorage.getItem('cp-theme');}catch(e){}if(m!=='light'&&m!=='dark'&&m!=='system'){m='system';}t=(m==='light'||m==='dark')?m:((window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');var d=document.documentElement;d.setAttribute('data-theme',t);d.setAttribute('data-theme-mode',m);})();</script>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body class="auth-body">
+
+<div class="auth-bg"></div>
+<div class="auth-veil"></div>
+
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="auth-logo" id="authLogo">企</span>
+      <h1 id="authName">企业服务大厅</h1>
+      <p id="authSlogan">一站式内部服务平台</p>
+    </div>
+
+    <form id="loginForm" autocomplete="on">
+      <label class="afield">
+        <span>账号</span>
+        <input id="username" name="username" type="text" autocomplete="username" placeholder="请输入账号" maxlength="40">
+      </label>
+
+      <label class="afield">
+        <span>密码</span>
+        <input id="password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" maxlength="64">
+      </label>
+
+      <label class="auth-remember">
+        <input id="remember" type="checkbox" checked>
+        <span>30 天内保持登录</span>
+      </label>
+
+      <p class="auth-err" id="err" hidden></p>
+
+      <button class="auth-btn" id="submitBtn" type="submit">登 录</button>
+    </form>
+
+    <p class="auth-tip">账号由管理员开通 · 忘记密码请联系管理员重置</p>
+  </div>
+
+  <p class="auth-foot" id="authFoot">© 2026</p>
+</div>
+
+<script src="assets/ui.js"></script>
+<script src="assets/login.js"></script>
+</body>
+</html>

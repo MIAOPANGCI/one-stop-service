@@ -53,7 +53,7 @@
       logo: '企', brandColor: '#2fa795', heroImage: '', heroFoot: '我们为你准备了丰富的内部服务',
       netMode: 'auto', probeUrls: [], openInNewTab: true, openMode: 'new',
       fontFamily: '', inkLight: '', inkDark: '',
-      heroGlow: true, glowColor: '', updatedAt: null
+      heroGlow: true, glowColor: '', tabPopups: 'block', updatedAt: null
     },
     links: [],
     version: '',
@@ -73,6 +73,7 @@
   var formBrand = BRAND_THEMES[0].color;
   var formLogoImage = '';
   var formGlow = '';
+  var formTabPop = 'block';
   var formInkLight = '';
   var formInkDark = '';
   var formHeroImage = '';
@@ -366,10 +367,9 @@
   }
 
   /* ---------------- 站内页标签 ---------------- */
-  var tabs = [];
-  var activeId = 0;
+  var tabs = [];        // 真实页签，「门户」不占位
+  var activeId = 0;     // 0 = 门户
   var tabSeq = 0;
-  var tabsCollapsed = false;   // 「门户」按钮把页标签收起来，但不清掉
 
   function openTab(name, url) {
     if (!url) return;
@@ -383,7 +383,6 @@
       tabs.push({ id: ++tabSeq, name: name || url, url: url, failed: false });
       activeId = tabSeq;
     }
-    tabsCollapsed = false;
     hidePicker();
     syncTabs();
   }
@@ -394,28 +393,58 @@
     return out;
   }
 
+  function activeTab() { return findTab(activeId); }
+
+  /* 回门户：页签栏留着，数量一眼能看见 */
+  function goHome() {
+    activeId = 0;
+    hidePicker();
+    syncTabs();
+  }
+
+  function tabSandbox() {
+    var base = 'allow-scripts allow-forms allow-same-origin allow-modals allow-downloads';
+    // 默认拦掉 target=_blank / window.open：很多内网系统点一下就弹新窗口，很烦
+    if (state.settings.tabPopups === 'allow') {
+      base += ' allow-popups allow-popups-to-escape-sandbox';
+    }
+    return base;
+  }
+
   function syncTabs() {
     var host = $('#tabHost');
     if (!host) return;
 
-    host.hidden = tabs.length === 0 || tabsCollapsed;
-    if (!tabs.length) { $('#tabFrames').innerHTML = ''; return; }
-    if (!findTab(activeId)) activeId = tabs[tabs.length - 1].id;
+    var show = tabs.length > 0;
+    host.hidden = !show;
+    document.body.classList.toggle('has-tabs', show);
+    if (!show) { $('#tabFrames').innerHTML = ''; return; }
 
-    $('#tabList').innerHTML = tabs.map(function (t) {
+    if (activeId !== 0 && !findTab(activeId)) activeId = 0;
+    var homeOn = activeId === 0;
+
+    var html = '<button class="tabitem tab-home' + (homeOn ? ' on' : '') + '" type="button" data-id="0">' +
+      '<span>门户</span></button>';
+
+    html += tabs.map(function (t) {
       return '<button class="tabitem' + (t.id === activeId ? ' on' : '') + '" type="button" data-id="' + t.id + '">' +
         '<span>' + esc(t.name) + '</span>' +
         '<i class="tabx" data-close="' + t.id + '" title="关闭">✕</i>' +
         '</button>';
     }).join('');
 
+    $('#tabList').innerHTML = html;
+
     var box = $('#tabFrames');
+    box.hidden = homeOn;
+
     tabs.forEach(function (t) {
       var f = box.querySelector('iframe[data-id="' + t.id + '"]');
       if (!f) {
         f = document.createElement('iframe');
         f.setAttribute('data-id', t.id);
         f.setAttribute('referrerpolicy', 'no-referrer');
+        f.setAttribute('sandbox', tabSandbox());
         f.src = t.url;
         box.appendChild(f);
 
@@ -428,7 +457,7 @@
           if (!done) { t.failed = true; paintTabFail(t.id, true); }
         }, 7000);
       }
-      f.hidden = t.id !== activeId;
+      f.hidden = homeOn || t.id !== activeId;
     });
   }
 
@@ -456,24 +485,58 @@
     var d = box.querySelector('.tabfail[data-for="' + id + '"]');
     if (d) d.parentNode.removeChild(d);
 
+    var idx = tabs.map(function (t) { return t.id; }).indexOf(id);
     tabs = tabs.filter(function (t) { return t.id !== id; });
+
+    if (activeId === id) {
+      var prev = tabs[idx - 1] || tabs[idx] || null;
+      activeId = prev ? prev.id : 0;
+    }
     syncTabs();
   }
 
-  /* 页标签展开时，用这个面板再开一个服务 */
-  function buildPicker() {
-    var box = $('#tabPick');
+  function reloadActiveTab() {
+    var t = activeTab();
+    if (!t) { toast('先打开一个页签'); return; }
+    var f = $('#tabFrames').querySelector('iframe[data-id="' + t.id + '"]');
+    if (!f) return;
+    paintTabFail(t.id, false);
+    try { f.contentWindow.location.reload(); } catch (e) { f.src = t.url; }
+    toast('已刷新');
+  }
+
+  function openInNewTab(url) {
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { a.remove(); }, 0);
+  }
+
+  /* ---------------- 服务选择面板 ---------------- */
+  function buildPicker(keyword) {
+    var box = $('#tabPickList');
+    if (!box) return;
+    var kw = String(keyword || '').trim().toLowerCase();
+
     var groups = {};
     var order = [];
 
     (state.links || []).forEach(function (l) {
+      if (kw) {
+        var hay = [l.name, l.desc, l.cat].join(' ').toLowerCase();
+        if (hay.indexOf(kw) === -1) return;
+      }
       var cat = l.cat || '未分类';
       if (!groups[cat]) { groups[cat] = []; order.push(cat); }
       groups[cat].push(l);
     });
 
     if (!order.length) {
-      box.innerHTML = '<div class="pick-empty">还没有服务</div>';
+      box.innerHTML = '<div class="pick-empty">没有匹配的服务</div>';
       return;
     }
 
@@ -493,36 +556,16 @@
   }
 
   function showPicker() {
-    buildPicker();
     $('#tabPick').hidden = false;
+    var s = $('#tabPickSearch');
+    s.value = '';
+    buildPicker('');
+    s.focus();
   }
 
   function hidePicker() {
     var p = $('#tabPick');
     if (p) p.hidden = true;
-  }
-
-  function activeTab() { return findTab(activeId); }
-
-  function reloadActiveTab() {
-    var t = activeTab();
-    if (!t) return;
-    var f = $('#tabFrames').querySelector('iframe[data-id="' + t.id + '"]');
-    if (!f) return;
-    paintTabFail(t.id, false);
-    try { f.contentWindow.location.reload(); } catch (e) { f.src = t.url; }
-    toast('已刷新');
-  }
-
-  function openInNewTab(url) {
-    var a = document.createElement('a');
-    a.href = url;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function () { a.remove(); }, 0);
   }
 
   /* ---------------- 渲染：品牌与首屏 ---------------- */
@@ -1159,6 +1202,8 @@
     $('#lanFillBtn').hidden = !(state.lan && state.lan.length);
 
     $('#s-font').value = s.fontFamily || '';
+    $('#s-tabpop').value = s.tabPopups === 'allow' ? 'allow' : 'block';
+    formTabPop = $('#s-tabpop').value;
     $('#s-open').value = s.openMode || (s.openInNewTab === false ? 'same' : 'new');
     $('#s-glow').value = s.heroGlow === false ? '0' : '1';
     formGlow = /^#[0-9a-fA-F]{6}$/.test(s.glowColor || '') ? s.glowColor : '';
@@ -1420,6 +1465,7 @@
       netMode: $('#s-mode').value,
       probeUrls: $('#s-probe').value.split('\n').map(normalizeUrl).filter(Boolean),
       openMode: $('#s-open').value,
+      tabPopups: $('#s-tabpop').value,
       fontFamily: $('#s-font').value,
       heroGlow: $('#s-glow').value === '1',
       glowColor: formGlow,
@@ -1433,6 +1479,16 @@
       closeModal($('#setModal'));
       applyType();
       refreshNet();
+
+      // 弹窗策略是写在 iframe 的 sandbox 上的，改了得重建页签才生效
+      if (payload.tabPopups !== formTabPop && tabs.length) {
+        formTabPop = payload.tabPopups;
+        var box = $('#tabFrames');
+        Array.prototype.slice.call(box.querySelectorAll('iframe, .tabfail')).forEach(function (el) {
+          el.parentNode.removeChild(el);
+        });
+        syncTabs();
+      }
     });
   }
 
@@ -1930,8 +1986,12 @@
     $('#tabList').addEventListener('click', function (e) {
       var x = e.target.closest('[data-close]');
       if (x) { closeTab(Number(x.getAttribute('data-close'))); return; }
+
       var b = e.target.closest('[data-id]');
-      if (b) { activeId = Number(b.getAttribute('data-id')); syncTabs(); }
+      if (!b) return;
+      var id = Number(b.getAttribute('data-id'));
+      if (id === 0) goHome();
+      else { activeId = id; syncTabs(); }
     });
 
     $('#tabFrames').addEventListener('click', function (e) {
@@ -1943,18 +2003,12 @@
       }
       var re = e.target.closest('[data-retry]');
       if (re) {
-        var id = Number(re.getAttribute('data-retry'));
-        var t2 = findTab(id);
-        var f = $('#tabFrames').querySelector('iframe[data-id="' + id + '"]');
-        paintTabFail(id, false);
+        var rid = Number(re.getAttribute('data-retry'));
+        var t2 = findTab(rid);
+        var f = $('#tabFrames').querySelector('iframe[data-id="' + rid + '"]');
+        paintTabFail(rid, false);
         if (f && t2) { f.src = 'about:blank'; setTimeout(function () { f.src = t2.url; }, 60); }
       }
-    });
-
-    $('#tabHome').addEventListener('click', function () {
-      tabsCollapsed = true;
-      hidePicker();
-      syncTabs();
     });
 
     $('#tabNew').addEventListener('click', function (e) {
@@ -1964,6 +2018,7 @@
     });
 
     $('#tabPick').addEventListener('click', function (e) {
+      if (e.target.closest('#tabPickSearch')) return;
       var b = e.target.closest('[data-link]');
       if (!b) return;
       var id = b.getAttribute('data-link');
@@ -1972,18 +2027,15 @@
       if (l) openTab(l.name, pickUrl(l).url);
     });
 
+    $('#tabPickSearch').addEventListener('input', function () {
+      buildPicker(this.value);
+    });
+
     document.addEventListener('click', function (e) {
       if ($('#tabPick') && !$('#tabPick').hidden &&
           !e.target.closest('#tabPick') && !e.target.closest('#tabNew')) {
         hidePicker();
       }
-    });
-
-    $('#glowColor').addEventListener('input', function () { formGlow = this.value; });
-    $('#glowReset').addEventListener('click', function () {
-      formGlow = '';
-      $('#glowColor').value = '#69e7c7';
-      toast('保存后恢复默认光晕颜色');
     });
 
     $('#tabReload').addEventListener('click', reloadActiveTab);

@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>企业服务大厅</title>
+<script>(function(){var m=null,t=null;try{m=localStorage.getItem('cp-theme');}catch(e){}if(m!=='light'&&m!=='dark'&&m!=='system'){m='system';}t=(m==='light'||m==='dark')?m:((window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');var d=document.documentElement;d.setAttribute('data-theme',t);d.setAttribute('data-theme-mode',m);})();</script>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<!-- ==================== 顶部导航 ==================== -->
+<header class="nav" id="nav">
+  <div class="nav-left">
+    <a class="nav-brand" href="#top" id="homeBtn">
+      <span class="nav-logo" id="navLogo">企</span>
+      <span class="nav-name" id="navName">企业服务大厅</span>
+    </a>
+
+    <div class="nav-left-tools">
+      <a class="nav-ico" href="#top" title="首页">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+          <path d="M3 10.5 12 3l9 7.5"></path><path d="M5.5 9.5V20h13V9.5"></path>
+        </svg>
+      </a>
+      <a class="nav-ico" href="#services" title="服务列表">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+        </svg>
+      </a>
+    </div>
+  </div>
+
+  <div class="nav-search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.6-3.6"></path>
+    </svg>
+    <input id="searchInput" type="search" placeholder="搜索服务" autocomplete="off" spellcheck="false">
+    <kbd>/</kbd>
+  </div>
+
+  <div class="nav-right">
+    <button class="net-pill" id="netPill" type="button">
+      <span class="dot"></span><span class="txt">检测中</span>
+    </button>
+    <button class="nav-btn" id="addBtn" type="button">
+      <span class="plus">＋</span><span class="nav-btn-txt">添加服务</span>
+    </button>
+    <button class="nav-ico theme-btn" id="themeBtn" type="button" title="切换夜间模式">
+      <svg class="ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"></path>
+      </svg>
+      <svg class="ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.5 14.6A8.4 8.4 0 0 1 9.4 3.5a8.4 8.4 0 1 0 11.1 11.1z"></path>
+      </svg>
+    </button>
+    <button class="nav-ico" id="settingsBtn" type="button" title="设置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <circle cx="12" cy="12" r="3.2"></circle>
+        <path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47V21a2 2 0 1 1-4 0v-.09A1.6 1.6 0 0 0 9.2 19.4a1.6 1.6 0 0 0-1.77.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.6 1.6 0 0 0 4.6 15a1.6 1.6 0 0 0-1.47-.97H3a2 2 0 1 1 0-4h.09A1.6 1.6 0 0 0 4.6 9.2a1.6 1.6 0 0 0-.32-1.77l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.6 1.6 0 0 0 9 4.6a1.6 1.6 0 0 0 .97-1.47V3a2 2 0 1 1 4 0v.09a1.6 1.6 0 0 0 .97 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.6 1.6 0 0 0 19.4 9v.09a1.6 1.6 0 0 0 1.47.97H21a2 2 0 1 1 0 4h-.09a1.6 1.6 0 0 0-1.47.97z"></path>
+      </svg>
+    </button>
+
+    <a class="nav-btn login-btn" id="loginBtn" href="/login.html" hidden>登录</a>
+
+    <div class="user-menu" id="userMenu" hidden>
+      <button class="user-btn" id="userBtn" type="button">
+        <span class="user-avatar" id="userAvatar">·</span>
+        <i class="user-caret"></i>
+      </button>
+      <div class="user-drop" id="userDrop" hidden>
+        <div class="user-drop-head">
+          <b id="dropName">—</b>
+          <span id="dropRole">—</span>
+        </div>
+        <button type="button" id="pwdItem">修改密码</button>
+        <button type="button" id="usersItem" hidden>用户管理</button>
+        <button type="button" id="logoutItem" class="danger">退出登录</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ==================== 首屏 ==================== -->
+<section class="hero" id="top">
+  <div class="hero-bg" id="heroBg"></div>
+  <div class="hero-veil"></div>
+
+  <div class="hero-inner">
+    <h1 id="heroTitle">企业服务大厅</h1>
+    <p class="hero-en" id="heroEn">CORP · SERVICE PORTAL</p>
+    <p class="hero-slogan" id="heroSlogan">一站式内部服务平台</p>
+    <a class="hero-btn" href="#services" id="enterBtn">进入门户 <em>Enter</em></a>
+  </div>
+
+  <a class="hero-foot" href="#services" id="heroFootLink">
+    <span id="heroFoot">我们为你准备了丰富的内部服务</span>
+    <i class="hero-arrow"></i>
+  </a>
+</section>
+
+<!-- ==================== 服务区 ==================== -->
+<main class="svc" id="services">
+  <div class="svc-inner">
+    <div class="svc-bar">
+      <nav class="tabs" id="catBar"></nav>
+      <span class="svc-count" id="svcCount"></span>
+    </div>
+
+    <div id="groups"></div>
+
+    <div class="locked" id="locked" hidden>
+      <div class="locked-glow" aria-hidden="true"></div>
+      <div class="locked-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4.6" y="10.4" width="14.8" height="9.8" rx="2.6"></rect>
+          <path d="M8.2 10.4V7.9a3.8 3.8 0 0 1 7.6 0v2.5"></path>
+          <circle cx="12" cy="15.2" r="1.1" fill="currentColor" stroke="none"></circle>
+        </svg>
+      </div>
+      <h3>服务区仅对内部成员开放</h3>
+      <p id="lockedDesc">使用公司账号登录后，即可访问全部内部系统入口。</p>
+      <a class="locked-btn" href="/login.html?next=/">立即登录</a>
+      <p class="locked-hint">还没有账号？请联系系统管理员开通</p>
+    </div>
+
+    <div class="empty" id="empty" hidden>
+      <div class="empty-ico">🗂</div>
+      <h3 id="emptyTitle">这里还没有服务</h3>
+      <p id="emptyHint">添加第一个服务，把常用系统都收进大厅。</p>
+      <button class="btn-primary" id="emptyAddBtn" type="button">＋ 添加服务</button>
+    </div>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <span id="footStat"></span>
+    <span class="foot-sync" id="footSync"></span>
+  </div>
+</footer>
+
+<div class="offline" id="offline" hidden>
+  <span>⚠ 未连接服务端，页面为只读状态</span>
+  <button type="button" id="retryBtn">重试</button>
+</div>
+
+<!-- ==================== 服务编辑弹窗 ==================== -->
+<div class="modal" id="linkModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3 id="linkModalTitle">添加服务</h3>
+      <button class="x" type="button" data-close>✕</button>
+    </div>
+    <form id="linkForm" class="modal-body">
+      <div class="row2">
+        <label class="field">
+          <span>服务名称 <b>*</b></span>
+          <input id="f-name" type="text" placeholder="例如：OA 协同办公" maxlength="24" required>
+        </label>
+        <label class="field">
+          <span>所属分类</span>
+          <input id="f-cat" type="text" list="catList" placeholder="办公协同" maxlength="12">
+          <datalist id="catList"></datalist>
+        </label>
+      </div>
+
+      <label class="field">
+        <span>说明</span>
+        <input id="f-desc" type="text" placeholder="一句话说明这个系统做什么" maxlength="40">
+      </label>
+
+      <div class="field">
+        <span>图标</span>
+        <div class="ico-row">
+          <div class="ico-prev" id="iconPrev"></div>
+          <div class="ico-ctrl">
+            <div class="ico-btns">
+              <button class="btn-line sm" id="iconUploadBtn" type="button">上传图片</button>
+              <button class="btn-line sm" id="iconClearBtn" type="button" hidden>用文字</button>
+              <input id="iconFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden>
+            </div>
+            <small class="hint">上传图片后优先用图片，建议正方形</small>
+          </div>
+        </div>
+        <div class="pick-row" id="iconPick"></div>
+        <div class="pick-row inline">
+          <input id="f-icon" type="text" maxlength="12" placeholder="或直接输入 emoji / 汉字" class="mini">
+          <small class="hint">最多 4 个字，多了自动缩小；留空用名称首字</small>
+        </div>
+      </div>
+
+      <div class="field">
+        <span>图标底色</span>
+        <div class="pick-row" id="colorPick"></div>
+      </div>
+
+      <div class="url-box">
+        <div class="url-box-head">
+          <strong>访问地址</strong>
+          <small class="hint">两个都填，会自动按当前网络选能通的那条</small>
+        </div>
+        <label class="field">
+          <span><i class="tag lan">内网</i> 内网地址</span>
+          <input id="f-lan" type="text" placeholder="http://192.168.1.10:8080">
+        </label>
+        <label class="field">
+          <span><i class="tag wan">外网</i> 外网地址</span>
+          <input id="f-wan" type="text" placeholder="https://oa.example.com">
+        </label>
+        <p class="warn-line" id="urlWarn" hidden>内网、外网地址至少填一个</p>
+      </div>
+    </form>
+    <div class="modal-foot">
+      <button class="btn-text danger" id="deleteBtn" type="button" hidden>删除此服务</button>
+      <div class="spacer"></div>
+      <button class="btn-text" type="button" data-close>取消</button>
+      <button class="btn-primary" id="saveBtn" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 设置弹窗 ==================== -->
+<div class="modal" id="setModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-card set-card" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>大厅设置</h3>
+      <button class="x" type="button" data-close>✕</button>
+    </div>
+
+    <div class="modal-body set-body">
+
+      <!-- ========== 第 1 栏：品牌 ========== -->
+      <div class="set-col">
+        <section class="set-sec">
+          <div class="group-label">品牌信息</div>
+
+          <label class="field">
+            <span>大厅名称</span>
+            <input id="s-company" type="text" maxlength="24" placeholder="示例科技有限公司">
+          </label>
+
+          <div class="field">
+            <span>Logo</span>
+            <div class="upl">
+              <div class="upl-box" id="logoBox">
+                <span class="upl-text" id="logoText">企</span>
+                <img id="logoImg" alt="" hidden>
+              </div>
+              <div class="upl-side">
+                <div class="upl-btns">
+                  <button class="btn-line sm" id="logoUploadBtn" type="button">上传图片</button>
+                  <button class="btn-line sm" id="logoClearBtn" type="button" hidden>移除</button>
+                  <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif" hidden>
+                </div>
+                <small class="hint">方形或横版皆可，高度建议 ≥128</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="row2">
+            <label class="field">
+              <span>Logo 文字</span>
+              <input id="s-logo" type="text" maxlength="2" placeholder="企">
+            </label>
+            <label class="field">
+              <span>英文名</span>
+              <input id="s-companyEn" type="text" maxlength="48" placeholder="CORP PORTAL">
+            </label>
+          </div>
+
+          <label class="field">
+            <span>一句话介绍</span>
+            <input id="s-slogan" type="text" maxlength="30" placeholder="一站式内部服务平台">
+          </label>
+
+          <label class="field">
+            <span>底部提示语</span>
+            <input id="s-heroFoot" type="text" maxlength="40" placeholder="我们为你准备了丰富的内部服务">
+          </label>
+        </section>
+
+        <section class="set-sec">
+          <div class="group-label">权限与数据</div>
+
+          <label class="field" id="loginRow" hidden>
+            <span>访问控制</span>
+            <select id="s-requireLogin">
+              <option value="1">必须登录才能访问（推荐）</option>
+              <option value="0">游客可直接浏览</option>
+            </select>
+            <small class="hint">仅管理员可修改</small>
+          </label>
+
+          <div class="io-row">
+            <button class="btn-line sm" id="exportBtn" type="button">导出</button>
+            <button class="btn-line sm" id="importBtn" type="button">导入</button>
+            <button class="btn-line sm" id="usersBtn2" type="button" hidden>用户</button>
+            <input id="importFile" type="file" accept="application/zip,.zip,application/json,.json" hidden>
+          </div>
+          <small class="hint">导出的 zip 里有服务、设置和正在使用的图片；早期版本的 json 备份也还能导入。</small>
+
+          <p class="hint" id="serverInfo"></p>
+
+          <div class="io-row">
+            <button class="btn-line sm" id="sweepBtn" type="button" hidden>清理图片</button>
+            <span class="hint" id="uploadStat"></span>
+          </div>
+
+          <div class="ver-row">
+            <span class="ver-tag" id="verTag">v—</span>
+            <button class="btn-line sm" id="checkUpdateBtn" type="button">检查更新</button>
+          </div>
+          <div class="upd-box" id="updBox" hidden></div>
+        </section>
+      </div>
+
+      <!-- ========== 第 2 栏：壁纸 + 内外网 ========== -->
+      <div class="set-col">
+        <section class="set-sec">
+          <div class="group-label">首屏壁纸</div>
+
+          <div class="wall-tabs">
+            <button class="wall-tab on" type="button" data-wall="light">日间模式</button>
+            <button class="wall-tab" type="button" data-wall="dark">夜间模式</button>
+          </div>
+
+          <div class="wall-pane" id="wallLight">
+            <div class="wall-presets" id="presetLight"></div>
+
+            <div class="hero-upl">
+              <div class="hero-upl-img" id="heroImgBox">
+                <span class="hero-upl-empty">当前使用默认渐变山景</span>
+              </div>
+              <div class="hero-upl-btns">
+                <button class="btn-line sm" id="heroUploadBtn" type="button">上传图片</button>
+                <button class="btn-line sm" id="heroClearBtn" type="button" hidden>恢复默认</button>
+                <input id="heroFile" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg" hidden>
+              </div>
+            </div>
+            <input id="s-heroImage" type="text" placeholder="也可以直接粘贴图片地址">
+          </div>
+
+          <div class="wall-pane" id="wallDark" hidden>
+            <div class="wall-presets" id="presetDark"></div>
+
+            <div class="hero-upl">
+              <div class="hero-upl-img" id="heroImgBoxDark">
+                <span class="hero-upl-empty">未设置时沿用日间壁纸</span>
+              </div>
+              <div class="hero-upl-btns">
+                <button class="btn-line sm" id="heroUploadBtnDark" type="button">上传图片</button>
+                <button class="btn-line sm" id="heroClearBtnDark" type="button" hidden>恢复默认</button>
+                <input id="heroFileDark" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg" hidden>
+              </div>
+            </div>
+            <input id="s-heroImageDark" type="text" placeholder="也可以直接粘贴图片地址">
+          </div>
+
+          <div class="field">
+            <span>首屏光晕</span>
+            <select id="s-glow">
+              <option value="1">显示（左上亮斑 + 右下暗角）</option>
+              <option value="0">关闭</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <span>光晕颜色</span>
+            <div class="ink-row">
+              <label class="ink-item">
+                <input type="color" id="glowColor" value="#69e7c7">
+                <em>亮斑与暗角同色系</em>
+              </label>
+              <button class="btn-line sm" id="glowReset" type="button">恢复默认</button>
+            </div>
+            <small class="hint">只影响壁纸上的光斑，不动图片本身；建议 1920×1080，支持 JPG / PNG / WebP / GIF / BMP / AVIF / SVG，单张不超过 6MB。</small>
+          </div>
+        </section>
+
+        <section class="set-sec">
+          <div class="group-label">打开方式</div>
+
+          <label class="field">
+            <span>点开服务时</span>
+            <select id="s-open">
+              <option value="new">新开浏览器标签页</option>
+              <option value="tab">在当前页面用页标签打开</option>
+              <option value="same">当前页直接跳转</option>
+            </select>
+            <small class="hint">页标签是内嵌在门户里；对方站点若禁止被内嵌，会提示改用新标签页。</small>
+          </label>
+
+          <label class="field">
+            <span>页签里的新窗口</span>
+            <select id="s-tabpop">
+              <option value="block">拦截，留在页签内</option>
+              <option value="allow">允许弹出浏览器窗口</option>
+            </select>
+            <small class="hint">有些系统用 target="_blank" 打开子页面，拦截后点了没反应，那种情况切到「允许」。</small>
+          </label>
+        </section>
+
+        <section class="set-sec">
+          <div class="group-label">内外网</div>
+
+          <label class="field">
+            <span>网络模式</span>
+            <select id="s-mode">
+              <option value="auto">自动识别（推荐）</option>
+              <option value="lan">始终使用内网地址</option>
+              <option value="wan">始终使用外网地址</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>内网探测地址</span>
+            <textarea id="s-probe" rows="2" placeholder="http://192.168.3.1&#10;http://192.168.8.1:8000/ping"></textarea>
+            <div class="probe-row">
+              <button class="btn-line sm" id="probeTestBtn" type="button">测试连通</button>
+              <button class="btn-line sm" id="lanFillBtn" type="button" hidden>用本机内网地址</button>
+              <span class="probe-res" id="probeRes"></span>
+            </div>
+            <small class="hint">每行一个，能连上任意一个即判定为内网。填内网网关，或任意只有内网能打开的地址；只响应 ping、没开网页端口的设备不行（浏览器发不了 ICMP），这种情况点「用本机内网地址」。</small>
+          </label>
+        </section>
+      </div>
+
+      <!-- ========== 第 3 栏：主题 + 数据 ========== -->
+      <div class="set-col">
+        <section class="set-sec">
+          <div class="group-label">主题配色</div>
+
+          <div class="swatches" id="brandPick"></div>
+
+          <div class="palette" id="palette"></div>
+
+          <div class="brand-custom">
+            <label class="color-well" title="选择任意颜色">
+              <input type="color" id="brandColor" value="#2fa795">
+            </label>
+            <input type="text" id="brandHex" class="hex-input" maxlength="7" placeholder="#2fa795" spellcheck="false">
+          </div>
+        </section>
+
+        <section class="set-sec">
+          <div class="group-label">字体与文字</div>
+
+          <label class="field">
+            <span>字体</span>
+            <select id="s-font">
+              <option value="">默认（苹方 / 微软雅黑）</option>
+              <option value="yahei">微软雅黑</option>
+              <option value="songti">宋体 / 思源宋体</option>
+              <option value="simhei">黑体</option>
+              <option value="kaiti">楷体</option>
+              <option value="fangsong">仿宋</option>
+              <option value="dengxian">等线</option>
+              <option value="segoe">Segoe UI（西文优先）</option>
+            </select>
+          </label>
+
+          <div class="field">
+            <span>文字颜色</span>
+            <div class="ink-row">
+              <label class="ink-item">
+                <input type="color" id="inkLight" value="#1a2430">
+                <em>日间</em>
+              </label>
+              <label class="ink-item">
+                <input type="color" id="inkDark" value="#e7edf3">
+                <em>夜间</em>
+              </label>
+              <button class="btn-line sm" id="inkReset" type="button">已是跟随主题</button>
+            </div>
+            <small class="hint">留空即跟随深浅主题；改过之后按选定颜色显示，注意和壁纸的对比度。</small>
+          </div>
+        </section>
+
+        
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn-text" type="button" data-close>取消</button>
+      <button class="btn-primary" id="setSaveBtn" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 修改密码弹窗 ==================== -->
+<div class="modal" id="pwdModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true" style="max-width:400px">
+    <div class="modal-head">
+      <h3>修改密码</h3>
+      <button class="x" type="button" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <label class="field">
+        <span>原密码</span>
+        <input id="p-old" type="password" maxlength="64" autocomplete="current-password">
+      </label>
+      <label class="field">
+        <span>新密码</span>
+        <input id="p-new" type="password" maxlength="64" autocomplete="new-password">
+        <small class="hint">至少 6 位，建议包含字母和数字</small>
+      </label>
+      <label class="field">
+        <span>确认新密码</span>
+        <input id="p-new2" type="password" maxlength="64" autocomplete="new-password">
+      </label>
+      <p class="warn-line" id="pWarn" hidden></p>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn-text" type="button" data-close>取消</button>
+      <button class="btn-primary" id="pwdSaveBtn" type="button">确认修改</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 通用确认弹窗 ==================== -->
+<div class="modal" id="confirmModal" hidden>
+  <div class="modal-mask" data-confirm-cancel></div>
+  <div class="modal-card confirm-card" role="dialog" aria-modal="true">
+    <div class="confirm-ico" id="confirmIco"></div>
+    <h3 id="confirmTitle">确认操作</h3>
+    <p id="confirmText"></p>
+    <div class="confirm-foot">
+      <button class="btn-line" id="confirmCancel" type="button">取消</button>
+      <button class="btn-primary" id="confirmOk" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="tabhost" id="tabHost" hidden>
+  <div class="tabbar">
+    <div class="tablist" id="tabList"></div>
+    <div class="tabtools">
+      <button class="tabtool tab-new" id="tabNew" type="button" title="再开一个服务">＋ 打开服务</button>
+      <button class="tabtool" id="tabReload" type="button" title="刷新当前页">刷新</button>
+      <button class="tabtool" id="tabPopup" type="button" title="在新标签页打开">新窗口</button>
+      <button class="tabtool" id="tabCloseAll" type="button" title="关闭全部页标签">关闭全部</button>
+    </div>
+  </div>
+  <div class="tabpick" id="tabPick" hidden>
+    <input id="tabPickSearch" class="pick-search" type="search" placeholder="搜索服务" autocomplete="off" spellcheck="false">
+    <div class="pick-list" id="tabPickList"></div>
+  </div>
+  <div class="tabframes" id="tabFrames"></div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="assets/ui.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

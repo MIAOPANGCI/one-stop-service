@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户管理 · 企业服务大厅</title>
+<script>(function(){var m=null,t=null;try{m=localStorage.getItem('cp-theme');}catch(e){}if(m!=='light'&&m!=='dark'&&m!=='system'){m='system';}t=(m==='light'||m==='dark')?m:((window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');var d=document.documentElement;d.setAttribute('data-theme',t);d.setAttribute('data-theme-mode',m);})();</script>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body class="page-body">
+
+<header class="subnav">
+  <a class="subnav-back" href="/" title="返回大厅">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 5l-7 7 7 7"></path>
+    </svg>
+  </a>
+  <h1>用户管理</h1>
+  <div class="subnav-right">
+    <span class="subnav-user" id="meName"></span>
+    <button class="subnav-back theme-btn" id="themeBtn" type="button" title="切换夜间模式">
+      <svg class="ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"></path>
+      </svg>
+      <svg class="ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.5 14.6A8.4 8.4 0 0 1 9.4 3.5a8.4 8.4 0 1 0 11.1 11.1z"></path>
+      </svg>
+    </button>
+    <button class="btn-line" id="logoutBtn" type="button">退出登录</button>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-bar">
+    <div class="page-title">
+      <h2>账号列表</h2>
+      <p id="countText">正在加载…</p>
+    </div>
+    <div class="page-tools">
+      <input id="search" type="search" placeholder="搜索账号或姓名" autocomplete="off">
+      <button class="btn-primary" id="addUserBtn" type="button">＋ 新增用户</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="utable">
+      <thead>
+        <tr>
+          <th>账号</th>
+          <th>姓名</th>
+          <th>角色</th>
+          <th>状态</th>
+          <th>最后登录</th>
+          <th class="ta-r">操作</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <p class="page-note">
+    角色说明：<b>管理员</b> 可管理用户、服务与设置；<b>编辑者</b> 可增删改服务与设置；<b>浏览者</b> 只能查看和打开服务。
+  </p>
+</main>
+
+<!-- 用户编辑弹窗 -->
+<div class="modal" id="userModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true" style="max-width:460px">
+    <div class="modal-head">
+      <h3 id="modalTitle">新增用户</h3>
+      <button class="x" type="button" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <label class="field">
+        <span>账号 <b>*</b></span>
+        <input id="u-username" type="text" maxlength="40" placeholder="字母、数字、点、下划线、短横线">
+      </label>
+      <label class="field">
+        <span>姓名</span>
+        <input id="u-name" type="text" maxlength="30" placeholder="用于界面显示">
+      </label>
+      <label class="field">
+        <span>角色</span>
+        <select id="u-role">
+          <option value="admin">管理员 · 可管理用户与全部内容</option>
+          <option value="editor">编辑者 · 可增删改服务与设置</option>
+          <option value="viewer">浏览者 · 只能查看和打开</option>
+        </select>
+      </label>
+      <label class="field">
+        <span id="pwdLabel">密码 <b>*</b></span>
+        <input id="u-password" type="text" maxlength="64" placeholder="至少 6 位">
+        <small class="hint" id="pwdHint">建议创建后由用户自行修改</small>
+      </label>
+      <p class="warn-line" id="uWarn" hidden></p>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn-text" type="button" data-close>取消</button>
+      <button class="btn-primary" id="saveUserBtn" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 通用确认弹窗 -->
+<div class="modal" id="confirmModal" hidden>
+  <div class="modal-mask" data-confirm-cancel></div>
+  <div class="modal-card confirm-card" role="dialog" aria-modal="true">
+    <div class="confirm-ico" id="confirmIco"></div>
+    <h3 id="confirmTitle">确认操作</h3>
+    <p id="confirmText"></p>
+    <div class="confirm-foot">
+      <button class="btn-line" id="confirmCancel" type="button">取消</button>
+      <button class="btn-primary" id="confirmOk" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="assets/ui.js"></script>
+<script src="assets/users.js"></script>
+</body>
+</html>

@@ -396,6 +396,15 @@
             </select>
             <small class="hint">页标签是内嵌在门户里；对方站点若禁止被内嵌，会提示改用新标签页。</small>
           </label>
+
+          <label class="field">
+            <span>页签里的新窗口</span>
+            <select id="s-tabpop">
+              <option value="block">拦截，留在页签内</option>
+              <option value="allow">允许弹出浏览器窗口</option>
+            </select>
+            <small class="hint">有些系统用 target="_blank" 打开子页面，拦截后点了没反应，那种情况切到「允许」。</small>
+          </label>
         </section>
 
         <section class="set-sec">
@@ -534,7 +543,6 @@
 
 <div class="tabhost" id="tabHost" hidden>
   <div class="tabbar">
-    <button class="tabtool tab-home" id="tabHome" type="button" title="回到门户（页标签保留）">门户</button>
     <div class="tablist" id="tabList"></div>
     <div class="tabtools">
       <button class="tabtool tab-new" id="tabNew" type="button" title="再开一个服务">＋ 打开服务</button>
@@ -543,7 +551,10 @@
       <button class="tabtool" id="tabCloseAll" type="button" title="关闭全部页标签">关闭全部</button>
     </div>
   </div>
-  <div class="tabpick" id="tabPick" hidden></div>
+  <div class="tabpick" id="tabPick" hidden>
+    <input id="tabPickSearch" class="pick-search" type="search" placeholder="搜索服务" autocomplete="off" spellcheck="false">
+    <div class="pick-list" id="tabPickList"></div>
+  </div>
   <div class="tabframes" id="tabFrames"></div>
 </div>
 

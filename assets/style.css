@@ -422,7 +422,7 @@ html[data-glow="off"] .hero-bg::after { display: none; }
 }
 
 /* 锚点跳转时避开固定导航 */
-#services, .svc { scroll-margin-top: var(--nav-h); }
+#services, .svc { scroll-margin-top: calc(var(--nav-h) + var(--tab-h, 0px)); }
 
 .svc-inner {
   max-width: 1280px;
@@ -2509,24 +2509,26 @@ html[data-theme="dark"] .probe-res.warn { color: #ff9ba2; }
 /* ===========================================================
    站内页标签
    =========================================================== */
-.tabhost {
-  position: fixed;
-  inset: 0;
-  z-index: 150;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-}
+.tabhost { position: static; }
+.tabhost[hidden] { display: none !important; }
+
+/* 页签栏常驻顶部：回门户也留着，能看见开了多少个 */
+body.has-tabs { --tab-h: 48px; }
+body.has-tabs .nav { top: var(--tab-h); }
 
 .tabbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 150;
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 48px;
+  height: var(--tab-h, 48px);
   padding: 0 10px;
   background: var(--card);
   border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
 }
 
 .tablist {
@@ -2598,11 +2600,15 @@ html[data-theme="dark"] .probe-res.warn { color: #ff9ba2; }
 .tabtool:hover { border-color: var(--line-2); color: var(--ink); }
 
 .tabframes {
-  position: relative;
-  flex: 1;
-  min-height: 0;
+  position: fixed;
+  top: var(--tab-h, 48px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 149;
   background: #fff;
 }
+.tabframes[hidden] { display: none !important; }
 
 .tabframes > iframe {
   position: absolute;
@@ -2651,13 +2657,13 @@ html[data-theme="dark"] .probe-res.warn { color: #ff9ba2; }
 .tab-new:hover { background: var(--brand-dark); border-color: var(--brand-dark); color: #fff; }
 
 .tabpick {
-  position: absolute;
-  top: 52px;
+  position: fixed;
+  top: 54px;
   right: 12px;
-  z-index: 6;
+  z-index: 160;
   width: 330px;
   max-height: 62vh;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -2706,3 +2712,22 @@ html[data-theme="dark"] .probe-res.warn { color: #ff9ba2; }
 .pick-ico img { width: 100%; height: 100%; object-fit: contain; display: block; }
 
 .pick-empty { padding: 14px 10px; font-size: 12.5px; color: var(--ink-3); }
+
+
+.pick-search {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-family: inherit;
+}
+.pick-search:focus { outline: none; border-color: var(--brand); }
+
+.pick-list { max-height: calc(62vh - 56px); overflow-y: auto; }
+
+.tabitem.tab-home { flex-shrink: 0; font-weight: 500; }
