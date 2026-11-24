@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, execSync } from 'node:child_process';
+import zlib from 'node:zlib';
 import https from 'node:https';
 
 const OWNER = process.env.RELEASE_OWNER || 'MIAOPANGCI';
@@ -21,7 +22,6 @@ const REPO = process.env.RELEASE_REPO || 'one-stop-service';
 const SLUG = `${OWNER}/${REPO}`;
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const BUILD_DIR = path.join(ROOT, '.release', 'build');
 const OUT_DIR = path.join(ROOT, '.release');
 
 const args = process.argv.slice(2);
@@ -42,11 +42,95 @@ function ok(msg) { console.log('  ✓ ' + msg); }
 function warn(msg) { console.log('  ! ' + msg); }
 function die(msg) { console.error('\n✗ ' + msg + '\n'); process.exit(1); }
 
-function copyInto(relPath, destRoot) {
-  const from = path.join(ROOT, relPath);
-  const to = path.join(destRoot, relPath);
-  fs.mkdirSync(path.dirname(to), { recursive: true });
-  fs.copyFileSync(from, to);
+/* ---------------- 自己打包 zip ----------------
+   Windows 自带的压缩命令会在条目名里写反斜杠，
+   Linux / macOS 上解出来是一个文件名带 \ 的东西，而不是目录结构。
+   这里按规范写正斜杠 + deflate，跨平台解压都正常。 */
+
+const CRC_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  return t;
+})();
+
+function crc32(buf) {
+  let c = -1;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+
+function dosTime(d) {
+  return {
+    time: (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2),
+    date: ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()
+  };
+}
+
+/* files: [{ name, data }]，name 用正斜杠 */
+function zipFiles(files) {
+  const { time, date } = dosTime(new Date());
+
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+
+  files.forEach((f) => {
+    const nameBuf = Buffer.from(String(f.name).replace(/\\/g, '/'), 'utf8');
+    const raw = Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data);
+    const packed = zlib.deflateRawSync(raw, { level: 9 });
+    const crc = crc32(raw);
+
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50, 0);
+    lh.writeUInt16LE(20, 4);            // version needed
+    lh.writeUInt16LE(0x0800, 6);        // 文件名是 UTF-8
+    lh.writeUInt16LE(8, 8);             // deflate
+    lh.writeUInt16LE(time, 10);
+    lh.writeUInt16LE(date, 12);
+    lh.writeUInt32LE(crc, 14);
+    lh.writeUInt32LE(packed.length, 18);
+    lh.writeUInt32LE(raw.length, 22);
+    lh.writeUInt16LE(nameBuf.length, 26);
+    lh.writeUInt16LE(0, 28);
+
+    locals.push(lh, nameBuf, packed);
+
+    const ch = Buffer.alloc(46);
+    ch.writeUInt32LE(0x02014b50, 0);
+    ch.writeUInt16LE(20, 4);            // version made by
+    ch.writeUInt16LE(20, 6);            // version needed
+    ch.writeUInt16LE(0x0800, 8);
+    ch.writeUInt16LE(8, 10);
+    ch.writeUInt16LE(time, 12);
+    ch.writeUInt16LE(date, 14);
+    ch.writeUInt32LE(crc, 16);
+    ch.writeUInt32LE(packed.length, 20);
+    ch.writeUInt32LE(raw.length, 24);
+    ch.writeUInt16LE(nameBuf.length, 28);
+    ch.writeUInt32LE(0, 30);            // extra
+    ch.writeUInt32LE(0, 32);            // comment
+    ch.writeUInt16LE(0, 34);            // disk
+    ch.writeUInt16LE(0, 36);            // internal attrs
+    ch.writeUInt32LE(0o644 << 16, 38);  // external attrs：普通文件
+    ch.writeUInt32LE(offset, 42);
+
+    centrals.push(ch, nameBuf);
+    offset += lh.length + nameBuf.length + packed.length;
+  });
+
+  const centralBuf = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(files.length, 8);
+  eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(centralBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+
+  return Buffer.concat([...locals, centralBuf, eocd]);
 }
 
 function getToken() {
@@ -124,10 +208,6 @@ step('收集要打包的文件');
 const tracked = run('git', ['ls-files']).split('\n').filter(Boolean);
 if (!tracked.length) die('git 里没有文件。');
 
-fs.rmSync(BUILD_DIR, { recursive: true, force: true });
-const pkgRoot = path.join(BUILD_DIR, 'one-stop-service');
-fs.mkdirSync(pkgRoot, { recursive: true });
-tracked.forEach(f => copyInto(f, pkgRoot));
 ok(tracked.length + ' 个文件');
 
 /* 3. 打 zip */
@@ -136,14 +216,11 @@ fs.mkdirSync(OUT_DIR, { recursive: true });
 const zipPath = path.join(OUT_DIR, zipName);
 fs.rmSync(zipPath, { force: true });
 
-if (process.platform === 'win32') {
-  execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command',
-    `Compress-Archive -Path '${pkgRoot}' -DestinationPath '${zipPath}' -Force`
-  ], { stdio: 'pipe' });
-} else {
-  execFileSync('zip', ['-r', '-q', zipName, 'one-stop-service'], { cwd: BUILD_DIR, stdio: 'pipe' });
-  fs.copyFileSync(path.join(BUILD_DIR, zipName), zipPath);
-}
+const entries = tracked.map((f) => ({
+  name: 'one-stop-service/' + f.split(path.sep).join('/'),
+  data: fs.readFileSync(path.join(ROOT, f))
+}));
+fs.writeFileSync(zipPath, zipFiles(entries));
 
 const size = fs.statSync(zipPath).size;
 ok(zipName + '  ' + (size / 1024).toFixed(0) + ' KB');
@@ -155,11 +232,10 @@ if (DRY) {
 
 /* 4. 打 tag 并推送 */
 step('打 tag ' + tag);
-try {
-  run('git', ['rev-parse', tag]);
+if (run('git', ['tag', '--list', tag])) {
   warn('本地已存在同名 tag，覆盖');
   run('git', ['tag', '-d', tag]);
-} catch (e) { /* 不存在，正常 */ }
+}
 run('git', ['tag', '-a', tag, '-m', 'Release ' + tag]);
 run('git', ['push', 'origin', 'HEAD']);
 run('git', ['push', 'origin', tag, '--force']);
