@@ -377,8 +377,12 @@
 
           <label class="field">
             <span>内网探测地址</span>
-            <textarea id="s-probe" rows="2" placeholder="http://192.168.1.1&#10;http://192.168.8.1:8000/ping"></textarea>
-            <small class="hint">每行一个，能连上任意一个即判定为内网。</small>
+            <textarea id="s-probe" rows="2" placeholder="http://192.168.3.1&#10;http://192.168.8.1:8000/ping"></textarea>
+            <div class="probe-row">
+              <button class="btn-line sm" id="probeTestBtn" type="button">测试连通</button>
+              <span class="probe-res" id="probeRes"></span>
+            </div>
+            <small class="hint">每行一个，能连上任意一个即判定为内网。填内网网关，或任意只有内网能打开的地址。</small>
           </label>
         </section>
       </div>

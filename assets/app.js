@@ -1141,6 +1141,51 @@
       });
   }
 
+  /* ---------- 测试探测地址是否真的能连通 ---------- */
+  function testProbes() {
+    var btn = $('#probeTestBtn');
+    var box = $('#probeRes');
+    var list = $('#s-probe').value.split('\n').map(normalizeUrl).filter(Boolean);
+
+    if (!list.length) {
+      box.className = 'probe-res warn';
+      box.textContent = '还没填地址';
+      return;
+    }
+
+    // HTTPS 页面里探测 http:// 会被浏览器当混合内容拦掉，一定失败
+    var hasHttp = list.some(function (u) { return /^http:\/\//i.test(u); });
+    if (location.protocol === 'https:' && hasHttp) {
+      box.className = 'probe-res warn';
+      box.textContent = '页面是 HTTPS，探测 HTTP 地址会被浏览器拦截，请改成 https:// 开头';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '测试中…';
+    box.className = 'probe-res';
+    box.textContent = '';
+
+    Promise.all(list.map(function (u) { return probeOnce(u, 2500); })).then(function (rs) {
+      var ok = rs.filter(Boolean).length;
+      var bad = list.filter(function (u, i) { return !rs[i]; });
+
+      if (ok === 0) {
+        box.className = 'probe-res warn';
+        box.textContent = '全部连不上：' + bad.join('、') + '。地址写错、端口不通，或它只响应 ping 不开网页端口';
+      } else if (ok === list.length) {
+        box.className = 'probe-res ok';
+        box.textContent = '全部可连通（' + ok + '/' + list.length + '），保存后按内网处理';
+      } else {
+        box.className = 'probe-res ok';
+        box.textContent = ok + '/' + list.length + ' 可连通，连不上的：' + bad.join('、');
+      }
+
+      btn.disabled = false;
+      btn.textContent = '测试连通';
+    });
+  }
+
   function saveSettings() {
     var payload = {
       company: $('#s-company').value.trim() || '企业服务大厅',
@@ -1563,6 +1608,12 @@
     /* 设置 */
     $('#settingsBtn').addEventListener('click', openSettings);
     $('#setSaveBtn').addEventListener('click', saveSettings);
+
+    /* 按钮在 <label> 里，不拦一下会被 label 的默认行为把焦点丢给 textarea */
+    $('#probeTestBtn').addEventListener('click', function (e) {
+      e.preventDefault();
+      testProbes();
+    });
     $('#checkUpdateBtn').addEventListener('click', checkUpdate);
     $('#sweepBtn').addEventListener('click', doSweepUploads);
 
