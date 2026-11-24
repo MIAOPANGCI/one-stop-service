@@ -110,12 +110,17 @@ node scripts/make-icon.mjs          # 也可以在 desktop/build 里换一张 ic
 
 ## 下载进度
 
-两种下载共用一个自绘的进度小窗，任务栏图标同时走 `setProgressBar`：
+两种下载共用一个自绘的小窗，任务栏图标同时走 `setProgressBar`：
 
 - 客户端自身的更新包（主进程 https 直连）
 - 页签里（webview）点下载，走 `session.on('will-download')`
 
-完成/失败会走系统通知，点通知定位到文件。
+几条行为约定：
+
+- **先选路径，再下载**。`will-download` 里用同步的 `showSaveDialogSync` 先拿保存路径，用户点取消就 `item.cancel()`，不会出现「路径还没选，进度条已经跑完」。
+- **多文件排队**。同一扇窗里按行排列（最多 4 行，多了滚动），不再一条一开一关地闪。每条单独「取消」，完成的行变绿、失败变红。
+- 窗口 `skipTaskbar` + `showInactive`，不抢焦点、不占任务栏；全部结束后 0.3 秒自动收起。
+- 完成/失败走系统通知，点通知在资源管理器里定位文件。
 
 ## 前端怎么判断
 

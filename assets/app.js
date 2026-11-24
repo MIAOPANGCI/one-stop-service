@@ -1696,7 +1696,7 @@
       }, 1200);
 
       card.node.classList.add('is-ok');
-      card.set(1, '已保存，可在下载文件夹查看', fmtSize(blob.size));
+      card.set(1, '下载完成', fmtSize(blob.size));
       card.close(2800);
     }
 

@@ -433,181 +433,6 @@ function showAbout() {
   aboutWin.on('closed', () => { aboutWin = null; });
 }
 
-/* ---------------- 下载进度 ---------------- */
-
-/* 一个自己画的进度小窗，两种下载共用：
-   - 客户端自身的更新包（https 直连 GitHub）
-   - 页签里（webview）点的下载，走 will-download
-   任务栏图标同时走 setProgressBar，窗口被挡在后面也能看见。 */
-
-let dlWin = null;
-let dlCancel = null;
-let dlTimer = null;
-
-function fmtSize(n) {
-  n = Number(n) || 0;
-  if (n < 1024) return n + ' B';
-  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
-  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
-  return (n / 1073741824).toFixed(2) + ' GB';
-}
-
-function escHtml(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function dlHtml(title, name) {
-  return `<!doctype html><meta charset="utf-8"><style>
-    *{box-sizing:border-box}
-    body{margin:0;height:100vh;display:flex;flex-direction:column;justify-content:center;
-      padding:16px 20px;font:12.5px/1.6 "Segoe UI","Microsoft YaHei",system-ui;color:#1a2430;background:#fff}
-    .hd{display:flex;align-items:baseline;gap:8px}
-    .hd b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .hd span{margin-left:auto;flex-shrink:0;color:#7b8590;font-variant-numeric:tabular-nums}
-    .nm{margin-top:2px;color:#5a6672;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .bar{margin:11px 0 8px;height:5px;border-radius:99px;background:#eef2f5;overflow:hidden}
-    .bar i{display:block;height:100%;width:0;background:#2fa795;border-radius:99px;transition:width .18s linear}
-    .ft{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#7b8590;font-variant-numeric:tabular-nums}
-    .ft button{margin-left:auto;padding:4px 11px;border:1px solid #e0e6ec;border-radius:6px;
-      background:#fff;color:#41505c;font:inherit;cursor:pointer}
-    .ft button:hover{background:#f4f7f9}
-  </style>
-  <div class="hd"><b>${escHtml(title)}</b><span id="pct">0%</span></div>
-  <div class="nm">${escHtml(name)}</div>
-  <div class="bar"><i id="fill"></i></div>
-  <div class="ft"><span id="txt">准备中…</span><button id="cx">取消</button></div>
-  <script>
-    window.__dlSet = function (p, t) {
-      document.getElementById('fill').style.width = p + '%';
-      document.getElementById('pct').textContent = Math.round(p) + '%';
-      if (t) document.getElementById('txt').textContent = t;
-    };
-    document.getElementById('cx').onclick = function () {
-      if (window.dlTip) window.dlTip.cancel();
-    };
-  </script>`;
-}
-
-function openDlTip(title, name) {
-  closeDlTip(0);
-
-  const self = new BrowserWindow({
-    width: 420,
-    height: 152,
-    frame: false,
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    show: false,
-    parent: win || undefined,
-    alwaysOnTop: true,
-    backgroundColor: '#ffffff',
-    icon: iconPath(),
-    webPreferences: {
-      preload: path.join(__dirname, 'dl-tip-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  });
-
-  dlWin = self;
-  self.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(dlHtml(title, name)));
-  self.once('ready-to-show', () => { if (!self.isDestroyed()) self.show(); });
-  self.on('closed', () => { if (dlWin === self) dlWin = null; });
-  self.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-
-  return self;
-}
-
-function dlTick(pct, text) {
-  if (!dlWin || dlWin.isDestroyed()) return;
-  const p = Math.max(0, Math.min(100, Number(pct) || 0));
-  dlWin.webContents.executeJavaScript(
-    'window.__dlSet(' + JSON.stringify(p) + ',' + JSON.stringify(String(text || '')) + ')'
-  ).catch(() => {});
-}
-
-function closeDlTip(delay) {
-  if (dlTimer) { clearTimeout(dlTimer); dlTimer = null; }
-
-  const target = dlWin;
-  if (!target || target.isDestroyed()) { dlWin = null; return; }
-
-  if (!delay) {
-    dlWin = null;
-    target.destroy();
-    return;
-  }
-
-  dlTimer = setTimeout(() => {
-    dlTimer = null;
-    if (!target.isDestroyed()) target.destroy();
-    if (dlWin === target) dlWin = null;
-  }, delay);
-}
-
-function setTaskbarProgress(ratio) {
-  if (!win || win.isDestroyed()) return;
-  try { win.setProgressBar(ratio > 0 && ratio < 1 ? ratio : -1); } catch (e) {}
-}
-
-function notifyDone(name, savePath) {
-  if (!Notification.isSupported()) return;
-  try {
-    const n = new Notification({ title: '下载完成', body: name, icon: iconPath() });
-    n.on('click', () => { if (savePath) shell.showItemInFolder(savePath); });
-    n.show();
-  } catch (e) {}
-}
-
-/* 页签里点「下载」：Electron 默认悄悄存盘，进度条、失败提示都没有 */
-function hookDownloads() {
-  session.defaultSession.on('will-download', (event, item) => {
-    const name = item.getFilename() || '下载文件';
-    const total0 = item.getTotalBytes();
-
-    openDlTip('正在下载', name);
-    dlCancel = () => { try { item.cancel(); } catch (e) {} };
-
-    item.on('updated', (e, state) => {
-      if (state === 'interrupted') {
-        dlTick(0, '连接中断，正在重试…');
-        setTaskbarProgress(-1);
-        return;
-      }
-      if (state !== 'progressing') return;
-
-      const got = item.getReceivedBytes();
-      const tot = item.getTotalBytes() || total0;
-
-      if (tot > 0) {
-        dlTick((got / tot) * 100, fmtSize(got) + ' / ' + fmtSize(tot));
-        setTaskbarProgress(got / tot);
-      } else {
-        dlTick(0, '已接收 ' + fmtSize(got));
-      }
-    });
-
-    item.on('done', (e, state) => {
-      dlCancel = null;
-      setTaskbarProgress(-1);
-
-      if (state === 'completed') {
-        dlTick(100, '下载完成');
-        closeDlTip(700);
-        notifyDone(name, item.getSavePath());
-      } else if (state === 'cancelled') {
-        closeDlTip(0);
-      } else {
-        dlTick(0, '下载失败');
-        closeDlTip(4000);
-      }
-    });
-  });
-}
-
 /* ---------------- 渲染层（门户设置页）来的请求 ---------------- */
 
 ipcMain.handle('portal:server-info', () => {
@@ -633,13 +458,318 @@ ipcMain.on('portal:relaunch', () => {
   app.exit(0);
 });
 
-ipcMain.on('dl-tip-cancel', () => {
-  const fn = dlCancel;
-  dlCancel = null;
+/* ---------------- 下载进度 ---------------- */
+
+/* 一个自己画的小窗，队列式管理。两种下载共用：
+   - 客户端自身的更新包（https 直连 GitHub）
+   - 页签里（webview）点的下载，走 will-download
+
+   两个要点：
+   1. 先让用户选保存路径，选完才开始真正下载；取消就整条取消，不显示进度。
+   2. 多个文件同时下时在同一个小窗里排队，而不是一开一关地闪。 */
+
+const DL_W = 420;
+const DL_ROW_H = 58;
+const DL_GAP = 10;
+const DL_PAD = 24;
+const DL_MAX_ROWS = 4;
+
+let dlWin = null;
+let dlTimer = null;
+let dlSeq = 0;
+const dlItems = new Map();   // id -> { name, cancel, state, ratio }
+
+function fmtSize(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
+}
+
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function dlHtml() {
+  return `<!doctype html><meta charset="utf-8"><style>
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;padding:12px 14px;overflow:hidden;background:#fff;
+      font:12.5px/1.5 "Segoe UI","Microsoft YaHei",system-ui;color:#1a2430}
+    #list{display:flex;flex-direction:column;gap:${DL_GAP}px;max-height:100%;overflow:auto}
+    .row{flex:0 0 auto}
+    .top{display:flex;align-items:baseline;gap:8px}
+    .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .pct{flex-shrink:0;color:#7b8590;font-variant-numeric:tabular-nums}
+    .bar{height:4px;border-radius:99px;background:#eef2f5;overflow:hidden;margin:6px 0 5px}
+    .bar i{display:block;height:100%;width:0;border-radius:99px;background:#2fa795;transition:width .18s linear}
+    .ft{display:flex;align-items:center;gap:8px;color:#7b8590;font-size:11.5px;font-variant-numeric:tabular-nums}
+    .ft .txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ft button{flex-shrink:0;padding:2px 9px;border:1px solid #e0e6ec;border-radius:5px;
+      background:#fff;color:#41505c;font:inherit;font-size:11px;cursor:pointer}
+    .ft button:hover{background:#f4f7f9}
+    .row.ok .bar i{background:#17a34a}
+    .row.err .bar i{background:#e0484d}
+    .row.err .nm,.row.err .txt{color:#e0484d}
+    .row.ok .ft button,.row.err .ft button{display:none}
+  </style>
+  <div id="list"></div>
+  <script>
+    function row(id) { return document.querySelector('.row[data-id="' + id + '"]'); }
+    window.__dl = {
+      add: function (id, name) {
+        var d = document.createElement('div');
+        d.className = 'row';
+        d.setAttribute('data-id', id);
+        d.innerHTML =
+          '<div class="top"><span class="nm"></span><span class="pct">0%</span></div>' +
+          '<div class="bar"><i></i></div>' +
+          '<div class="ft"><span class="txt">准备中…</span>' +
+          '<button data-cancel="' + id + '">取消</button></div>';
+        d.querySelector('.nm').textContent = name;
+        d.querySelector('.nm').title = name;
+        document.getElementById('list').appendChild(d);
+      },
+      set: function (id, p, t) {
+        var d = row(id); if (!d) return;
+        d.querySelector('.bar i').style.width = p + '%';
+        d.querySelector('.pct').textContent = Math.round(p) + '%';
+        if (t) d.querySelector('.txt').textContent = t;
+      },
+      finish: function (id, kind, t) {
+        var d = row(id); if (!d) return;
+        d.classList.add(kind);
+        d.querySelector('.bar i').style.width = (kind === 'ok' ? 100 : 0) + '%';
+        d.querySelector('.pct').textContent = kind === 'ok' ? '100%' : '';
+        if (t) d.querySelector('.txt').textContent = t;
+      },
+      remove: function (id) { var d = row(id); if (d) d.remove(); }
+    };
+    document.getElementById('list').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-cancel]');
+      if (b && window.dlTip) window.dlTip.cancel(b.getAttribute('data-cancel'));
+    });
+  </script>`;
+}
+
+function dlHeight() {
+  const n = Math.max(1, Math.min(dlItems.size, DL_MAX_ROWS));
+  return DL_PAD + n * DL_ROW_H + (n - 1) * DL_GAP;
+}
+
+function placeDlWindow(w) {
+  if (!win || win.isDestroyed() || !w || w.isDestroyed()) return;
+  try {
+    const b = win.getBounds();
+    w.setBounds({
+      x: Math.round(b.x + b.width - DL_W - 28),
+      y: Math.round(b.y + b.height - dlHeight() - 64),
+      width: DL_W,
+      height: dlHeight()
+    });
+  } catch (e) {}
+}
+
+function ensureDlWindow() {
+  // 刚要自动关闭时又来了新任务：撤销关闭，继续用这扇窗
+  if (dlTimer) { clearTimeout(dlTimer); dlTimer = null; }
+
+  if (dlWin && !dlWin.isDestroyed()) {
+    if (!dlWin.isVisible()) dlWin.showInactive();
+    return dlWin;
+  }
+
+  const self = new BrowserWindow({
+    width: DL_W,
+    height: dlHeight(),
+    frame: false,
+    resizable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    backgroundColor: '#ffffff',
+    icon: iconPath(),
+    webPreferences: {
+      preload: path.join(__dirname, 'dl-tip-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  dlWin = self;
+  placeDlWindow(self);
+  self.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(dlHtml()));
+  self.once('ready-to-show', () => { if (!self.isDestroyed()) self.showInactive(); });
+  self.on('closed', () => { if (dlWin === self) dlWin = null; });
+  self.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  return self;
+}
+
+function dlExec(js) {
+  if (!dlWin || dlWin.isDestroyed()) return Promise.resolve();
+  return dlWin.webContents.executeJavaScript(js).catch(() => {});
+}
+
+function dlAdd(name, cancel) {
+  const id = ++dlSeq;
+  dlItems.set(id, { name: name, cancel: cancel, state: 'run', ratio: 0 });
+
+  ensureDlWindow();
+  dlExec('window.__dl.add(' + id + ',' + JSON.stringify(String(name || '下载文件')) + ')');
+
+  placeDlWindow(dlWin);
+  return id;
+}
+
+function dlSet(id, pct, text, ratio) {
+  const it = dlItems.get(id);
+  if (!it || it.state !== 'run') return;
+
+  if (typeof ratio === 'number') it.ratio = Math.max(0, Math.min(1, ratio));
+
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  dlExec('window.__dl.set(' + id + ',' + JSON.stringify(p) + ',' + JSON.stringify(String(text || '')) + ')');
+  updateTaskbar();
+}
+
+function dlFinish(id, kind, text) {
+  const it = dlItems.get(id);
+  if (!it) return;
+
+  it.state = kind;
+  it.cancel = null;
+
+  dlExec('window.__dl.finish(' + id + ',' + JSON.stringify(kind) + ',' + JSON.stringify(String(text || '')) + ')');
+  updateTaskbar();
+
+  setTimeout(() => {
+    dlItems.delete(id);
+    dlExec('window.__dl.remove(' + id + ')');
+
+    if (!dlItems.size) {
+      closeDlWindow(220);
+    } else {
+      placeDlWindow(dlWin);
+    }
+  }, 2800);
+}
+
+function closeDlWindow(delay) {
+  if (dlTimer) { clearTimeout(dlTimer); dlTimer = null; }
+
+  const target = dlWin;
+  if (!target || target.isDestroyed()) { dlWin = null; return; }
+
+  if (!delay) {
+    dlWin = null;
+    target.destroy();
+    return;
+  }
+
+  dlTimer = setTimeout(() => {
+    dlTimer = null;
+    if (!target.isDestroyed()) target.destroy();
+    if (dlWin === target) dlWin = null;
+    setTaskbarProgress(-1);
+  }, delay);
+}
+
+function setTaskbarProgress(ratio) {
+  if (!win || win.isDestroyed()) return;
+  try { win.setProgressBar(ratio > 0 && ratio < 1 ? ratio : -1); } catch (e) {}
+}
+
+/* 多个同时下时，任务栏进度取平均，别来回跳 */
+function updateTaskbar() {
+  const running = Array.from(dlItems.values()).filter((x) => x.state === 'run');
+  if (!running.length) { setTaskbarProgress(-1); return; }
+
+  const avg = running.reduce((s, x) => s + (x.ratio || 0), 0) / running.length;
+  setTaskbarProgress(Math.max(0.01, avg));
+}
+
+function notifyDone(name, savePath) {
+  if (!Notification.isSupported()) return;
+  try {
+    const n = new Notification({ title: '下载完成', body: name, icon: iconPath() });
+    n.on('click', () => { if (savePath) shell.showItemInFolder(savePath); });
+    n.show();
+  } catch (e) {}
+}
+
+/* 页签里点「下载」：Electron 默认会自己弹保存框并立刻开下，
+   结果就是「还没选路径，进度条已经跑了」。这里改成自己控：
+   先同步弹保存框 → 取消就整条取消 → 选了才 setSavePath 开始下。 */
+function hookDownloads() {
+  session.defaultSession.on('will-download', (event, item) => {
+    const name = item.getFilename() || '下载文件';
+
+    let savePath = '';
+    try {
+      const opts = {
+        title: '保存文件',
+        defaultPath: path.join(app.getPath('downloads'), name),
+        buttonLabel: '保存'
+      };
+      savePath = (win && !win.isDestroyed())
+        ? dialog.showSaveDialogSync(win, opts)
+        : dialog.showSaveDialogSync(opts);
+    } catch (e) {
+      savePath = '';
+    }
+
+    if (!savePath) {
+      try { item.cancel(); } catch (e) {}
+      return;
+    }
+
+    try { item.setSavePath(savePath); } catch (e) {}
+
+    const id = dlAdd(name, () => { try { item.cancel(); } catch (e) {} });
+
+    item.on('updated', (e, state) => {
+      if (state === 'interrupted') return dlSet(id, 0, '连接中断，正在重试…');
+      if (state !== 'progressing') return;
+
+      const got = item.getReceivedBytes();
+      const tot = item.getTotalBytes();
+
+      if (tot > 0) {
+        dlSet(id, (got / tot) * 100, fmtSize(got) + ' / ' + fmtSize(tot), got / tot);
+      } else {
+        dlSet(id, 0, '已接收 ' + fmtSize(got));
+      }
+    });
+
+    item.on('done', (e, state) => {
+      if (state === 'completed') {
+        dlFinish(id, 'ok', '已保存到 ' + path.basename(item.getSavePath()));
+        notifyDone(name, item.getSavePath());
+      } else if (state === 'cancelled') {
+        dlFinish(id, 'err', '已取消');
+      } else {
+        dlFinish(id, 'err', '下载失败');
+      }
+    });
+  });
+}
+
+ipcMain.on('dl-tip-cancel', (e, id) => {
+  const it = dlItems.get(Number(id));
+  if (!it || it.state !== 'run') return;
+
+  const fn = it.cancel;
+  it.cancel = null;
   if (fn) { try { fn(); } catch (e) {} }
-  dlTick(0, '已取消');
-  setTaskbarProgress(-1);
-  closeDlTip(600);
+
+  dlFinish(Number(id), 'err', '已取消');
 });
 
 /* ---------------- 更新 ---------------- */
@@ -737,10 +867,15 @@ function downloadAndInstall(rel) {
   }
 
   const target = path.join(app.getPath('temp'), asset.name);
-  openDlTip('正在下载新版本 ' + String(rel.tag_name || ''), asset.name);
-  dlTick(0, '连接中…');
-
+  let currentReq = null;
   let cancelled = false;
+
+  const id = dlAdd('新版本 ' + String(rel.tag_name || '') + ' · ' + asset.name, () => {
+    cancelled = true;
+    if (currentReq) { try { currentReq.destroy(); } catch (e) {} }
+  });
+
+  dlSet(id, 0, '连接中…');
 
   const dl = (url, redirects) => {
     const req = https.get(url, { headers: { 'User-Agent': 'corp-portal-desktop' } }, (res) => {
@@ -748,9 +883,10 @@ function downloadAndInstall(rel) {
         res.resume();
         return dl(res.headers.location, redirects - 1);
       }
+
       if (res.statusCode !== 200) {
         res.resume();
-        closeDlTip(0);
+        dlFinish(id, 'err', '下载失败：HTTP ' + res.statusCode);
         dialog.showMessageBox(win, { type: 'error', message: '下载失败', detail: 'HTTP ' + res.statusCode + '，请到发布页手动下载。' });
         shell.openExternal(rel.html_url);
         return;
@@ -762,20 +898,20 @@ function downloadAndInstall(rel) {
       res.on('data', (chunk) => {
         got += chunk.length;
         if (total > 0) {
-          dlTick((got / total) * 100, fmtSize(got) + ' / ' + fmtSize(total) + '（' + fmtSize(total - got) + ' 剩余）');
-          setTaskbarProgress(got / total);
+          dlSet(id, (got / total) * 100,
+            fmtSize(got) + ' / ' + fmtSize(total) + '（剩余 ' + fmtSize(total - got) + '）',
+            got / total);
         } else {
-          dlTick(0, '已下载 ' + fmtSize(got));
+          dlSet(id, 0, '已下载 ' + fmtSize(got));
         }
       });
 
       const file = fs.createWriteStream(target);
       res.pipe(file);
+
       file.on('finish', () => {
         file.close(() => {
-          setTaskbarProgress(-1);
-          dlTick(100, '下载完成');
-          closeDlTip(400);
+          dlFinish(id, 'ok', '下载完成');
           const go = dialog.showMessageBoxSync(win, {
             type: 'question',
             message: '下载完成，现在安装吗？',
@@ -792,21 +928,20 @@ function downloadAndInstall(rel) {
           }
         });
       });
+
       file.on('error', () => {
-        setTaskbarProgress(-1);
-        closeDlTip(0);
+        dlFinish(id, 'err', '保存失败');
         dialog.showMessageBox(win, { type: 'error', message: '保存失败', detail: target });
       });
     });
 
+    currentReq = req;
+
     req.on('error', () => {
       if (cancelled) return;
-      setTaskbarProgress(-1);
-      closeDlTip(0);
+      dlFinish(id, 'err', '下载失败：网络中断');
       dialog.showMessageBox(win, { type: 'error', message: '下载失败', detail: '网络中断，请到发布页手动下载。' });
     });
-
-    dlCancel = () => { cancelled = true; req.destroy(); };
   };
 
   dl(asset.browser_download_url, 3);
