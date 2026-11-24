@@ -2723,7 +2723,8 @@ body.has-tabs .nav { top: var(--tab-h); }
 }
 .tabframes[hidden] { display: none !important; }
 
-.tabframes > iframe {
+.tabframes > iframe,
+.tabframes > webview {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -2731,6 +2732,10 @@ body.has-tabs .nav { top: var(--tab-h); }
   border: 0;
   background: #fff;
 }
+
+/* Electron 壳里的 webview：默认 inline-flex，得撑满并让 hidden 生效 */
+.tabframes > webview { display: flex; }
+.tabframes > webview[hidden] { display: none !important; }
 
 .tabfail {
   position: absolute;

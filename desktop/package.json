@@ -1,0 +1,14 @@
+{
+  "name": "portal-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "企业服务大厅 · 桌面壳",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:dev": "electron . --dev"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}

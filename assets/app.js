@@ -352,7 +352,8 @@
 
     var mode = state.settings.openMode || (state.settings.openInNewTab === false ? 'same' : 'new');
     if (mode === 'tab') {
-      if (link.noFrame) { openInNewTab(r.url); return; }
+      // 桌面壳里 webview 能正常内嵌，这个标记只对网页版生效
+      if (link.noFrame && !DESKTOP) { openInNewTab(r.url); return; }
       openTab(link.name, r.url);
       return;
     }
@@ -371,6 +372,60 @@
   }
 
   /* ---------------- 站内页标签 ---------------- */
+  // Electron 壳里用 <webview>，它不受 X-Frame-Options 限制
+  var DESKTOP = !!(window.desktopAPI && window.desktopAPI.isDesktop);
+
+  function frameOf(id) {
+    return $('#tabFrames').querySelector('[data-id="' + id + '"]');
+  }
+
+  /* 建一个页面容器：网页版是 iframe，桌面版是 webview */
+  function makeFrame(t) {
+    var box = $('#tabFrames');
+    var el;
+
+    var onOk = function () {
+      if (t.failed) { t.failed = false; paintTabFail(t.id, false); }
+    };
+    var onFail = function () {
+      t.failed = true;
+      paintTabFail(t.id, true);
+    };
+
+    if (DESKTOP) {
+      el = document.createElement('webview');
+      el.setAttribute('data-id', t.id);
+      el.setAttribute('allowpopups', '');
+      // src 留到入 DOM 之后再设：webview 只有附着到文档后才会真正挂载
+
+      var doneW = false;
+      el.addEventListener('did-finish-load', function () { doneW = true; onOk(); });
+      el.addEventListener('did-fail-load', function (e) {
+        if (e && e.errorCode === -3) return;     // 主动中止，不算失败
+        doneW = true;
+        onFail();
+      });
+      setTimeout(function () { if (!doneW) onFail(); }, 9000);
+    } else {
+      el = document.createElement('iframe');
+      el.setAttribute('data-id', t.id);
+      el.setAttribute('referrerpolicy', 'no-referrer');
+      el.setAttribute('sandbox', tabSandbox());
+      el.src = t.url;
+
+      var doneI = false;
+      el.addEventListener('load', function () {
+        doneI = true;
+        onOk();
+        adoptSameOrigin(el);
+      });
+      setTimeout(function () { if (!doneI) onFail(); }, 7000);
+    }
+
+    box.appendChild(el);
+    if (DESKTOP) el.src = t.url;
+    return el;
+  }
   var tabs = [];        // 真实页签，「门户」不占位
   var activeId = 0;     // 0 = 门户
   var tabSeq = 0;
@@ -455,25 +510,7 @@
     box.hidden = homeOn;
 
     tabs.forEach(function (t) {
-      var f = box.querySelector('iframe[data-id="' + t.id + '"]');
-      if (!f) {
-        f = document.createElement('iframe');
-        f.setAttribute('data-id', t.id);
-        f.setAttribute('referrerpolicy', 'no-referrer');
-        f.setAttribute('sandbox', tabSandbox());
-        f.src = t.url;
-        box.appendChild(f);
-
-        var done = false;
-        f.addEventListener('load', function () {
-          done = true;
-          if (t.failed) { t.failed = false; paintTabFail(t.id, false); }
-          adoptSameOrigin(f);
-        });
-        setTimeout(function () {
-          if (!done) { t.failed = true; paintTabFail(t.id, true); }
-        }, 7000);
-      }
+      var f = frameOf(t.id) || makeFrame(t);
       f.hidden = homeOn || t.id !== activeId;
     });
   }
@@ -530,7 +567,7 @@
 
   function removeTab(id) {
     var box = $('#tabFrames');
-    var f = box.querySelector('iframe[data-id="' + id + '"]');
+    var f = frameOf(id);
     if (f) f.parentNode.removeChild(f);
     var d = box.querySelector('.tabfail[data-for="' + id + '"]');
     if (d) d.parentNode.removeChild(d);
@@ -548,10 +585,14 @@
   function reloadActiveTab() {
     var t = activeTab();
     if (!t) { toast('先打开一个页签'); return; }
-    var f = $('#tabFrames').querySelector('iframe[data-id="' + t.id + '"]');
+    var f = frameOf(t.id);
     if (!f) return;
     paintTabFail(t.id, false);
-    try { f.contentWindow.location.reload(); } catch (e) { f.src = t.url; }
+    if (DESKTOP) {
+      try { f.reload(); } catch (e) { f.src = t.url; }
+    } else {
+      try { f.contentWindow.location.reload(); } catch (e) { f.src = t.url; }
+    }
     toast('已刷新');
   }
 
@@ -2077,9 +2118,16 @@
       if (re) {
         var rid = Number(re.getAttribute('data-retry'));
         var t2 = findTab(rid);
-        var f = $('#tabFrames').querySelector('iframe[data-id="' + rid + '"]');
+        var f = frameOf(rid);
         paintTabFail(rid, false);
-        if (f && t2) { f.src = 'about:blank'; setTimeout(function () { f.src = t2.url; }, 60); }
+        if (f && t2) {
+          if (DESKTOP) {
+            try { f.reload(); } catch (e) { f.src = t2.url; }
+          } else {
+            f.src = 'about:blank';
+            setTimeout(function () { f.src = t2.url; }, 60);
+          }
+        }
       }
     });
 
@@ -2098,7 +2146,7 @@
       (state.links || []).forEach(function (x) { if (x.id === id) l = x; });
       if (!l) return;
       var u = pickUrl(l).url;
-      if (l.noFrame) { openInNewTab(u); hidePicker(); return; }
+      if (l.noFrame && !DESKTOP) { openInNewTab(u); hidePicker(); return; }
       openTab(l.name, u);
     });
 
@@ -2112,6 +2160,14 @@
         hidePicker();
       }
     });
+
+    if (DESKTOP && window.desktopAPI.onOpenTab) {
+      window.desktopAPI.onOpenTab(function (url) {
+        var name = url;
+        try { name = new URL(url).hostname || url; } catch (e) {}
+        openTab(name, url);
+      });
+    }
 
     $('#tabReload').addEventListener('click', reloadActiveTab);
     $('#tabPopup').addEventListener('click', function () {
