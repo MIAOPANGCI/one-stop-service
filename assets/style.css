@@ -18,6 +18,8 @@
   --danger: #e0484d;
   --nav-h: 64px;
   --ease: cubic-bezier(.22, .61, .36, 1);
+  /* 字体栈：设置里可换，默认苹方 / 微软雅黑 */
+  --font-sans: "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
 
   /* 语义色板：深浅两套主题共用同一组变量名 */
   --field: #f8fafb;
@@ -63,7 +65,7 @@ body {
   margin: 0;
   background: var(--card);
   color: var(--ink);
-  font: 15px/1.6 "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font: 15px/1.6 var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -2446,3 +2448,186 @@ html[data-theme="dark"] .upd-box.warn { background: #331a1d; color: #ff9ba2; }
 
 html[data-theme="dark"] .probe-res.ok { color: #5fd6b8; }
 html[data-theme="dark"] .probe-res.warn { color: #ff9ba2; }
+
+/* ===========================================================
+   未登录：登录入口 + 锁定的网络标签
+   =========================================================== */
+.login-btn {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 9px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.login-btn:hover { background: var(--brand-dark); }
+
+/* 没权限时标签只是状态灯，不能点 */
+.net-pill.is-fixed { cursor: default; }
+.net-pill.is-fixed:hover { background: inherit; border-color: inherit; }
+
+/* ===========================================================
+   设置：文字颜色
+   =========================================================== */
+.ink-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ink-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.ink-item input[type="color"] {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: none;
+  cursor: pointer;
+}
+
+.ink-item em { font-style: normal; }
+
+/* ===========================================================
+   站内页标签
+   =========================================================== */
+.tabhost {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.tabbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 10px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.tablist {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tablist::-webkit-scrollbar { display: none; }
+
+.tabitem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 190px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--ink-3);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tabitem.on {
+  background: var(--card);
+  border-color: var(--line-2);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(16, 24, 32, .06);
+}
+
+.tabitem > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabx {
+  font-style: normal;
+  font-size: 10px;
+  opacity: .45;
+  padding: 2px 1px;
+}
+.tabx:hover { opacity: 1; }
+
+.tabtools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.tabtool {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.tabtool:hover { border-color: var(--line-2); color: var(--ink); }
+
+.tabframes {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+}
+
+.tabframes > iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.tabfail {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 30px;
+  background: var(--bg);
+  text-align: center;
+}
+
+.tabfail b {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.tabfail p {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--ink-3);
+}

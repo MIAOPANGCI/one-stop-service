@@ -51,7 +51,8 @@
     settings: {
       company: '企业服务大厅', companyEn: 'CORP · SERVICE PORTAL', slogan: '一站式内部服务平台',
       logo: '企', brandColor: '#2fa795', heroImage: '', heroFoot: '我们为你准备了丰富的内部服务',
-      netMode: 'auto', probeUrls: [], openInNewTab: true, updatedAt: null
+      netMode: 'auto', probeUrls: [], openInNewTab: true, openMode: 'new',
+      fontFamily: '', inkLight: '', inkDark: '', updatedAt: null
     },
     links: [],
     version: '',
@@ -70,6 +71,8 @@
   var formColor = PALETTE[0];
   var formBrand = BRAND_THEMES[0].color;
   var formLogoImage = '';
+  var formInkLight = '';
+  var formInkDark = '';
   var formHeroImage = '';
   var formHeroDark = '';
   var busy = false;
@@ -160,6 +163,7 @@
       state.links = Array.isArray(data.state.links) ? data.state.links : [];
       if (data.state.version) state.version = data.state.version;
       if (Array.isArray(data.state.lan)) state.lan = data.state.lan;
+      applyType();
     }
     if (data && data.user !== undefined) authUser = data.user;
     if (data && data.roles) roles = data.roles;
@@ -313,9 +317,13 @@
       : currentNet === 'offline' ? '离线' : '检测中';
     var suffix = mode === 'auto' ? '' : mode === 'lan' ? ' · 锁内网' : ' · 锁外网';
 
-    pill.className = 'net-pill is-' + currentNet;
+    var canSwitch = canEdit();
+    if (!canSwitch) suffix = '';
+    pill.className = 'net-pill is-' + currentNet + (canSwitch ? '' : ' is-fixed');
     $('.txt', pill).textContent = label + suffix;
-    pill.title = '当前网络：' + label + '\n点击切换：自动 → 锁定内网 → 锁定外网';
+    pill.title = canSwitch
+      ? '当前网络：' + label + '\n点击切换：自动 → 锁定内网 → 锁定外网'
+      : '当前网络：' + label + '\n登录后可切换网络模式';
   }
 
   /* ---------------- 地址选择 ---------------- */
@@ -339,15 +347,129 @@
     var r = pickUrl(link);
     if (!r.url) { toast('「' + link.name + '」还没有配置访问地址'); return; }
 
-    if (state.settings.openInNewTab === false) {
-      location.href = r.url;
-      return;
-    }
+    var mode = state.settings.openMode || (state.settings.openInNewTab === false ? 'same' : 'new');
+    if (mode === 'tab') { openTab(link.name, r.url); return; }
+    if (mode === 'same') { location.href = r.url; return; }
 
     // 用临时 <a> 打开：既能带 noopener，又不会被 window.open 的返回值坑到
     // （带 noopener 时 window.open 按规范必定返回 null，不能用它判断是否被拦截）
     var a = document.createElement('a');
     a.href = r.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { a.remove(); }, 0);
+  }
+
+  /* ---------------- 站内页标签 ---------------- */
+  var tabs = [];
+  var activeId = 0;
+  var tabSeq = 0;
+
+  function openTab(name, url) {
+    if (!url) return;
+
+    var hit = null;
+    tabs.forEach(function (t) { if (t.url === url) hit = t; });
+
+    if (hit) {
+      activeId = hit.id;
+    } else {
+      tabs.push({ id: ++tabSeq, name: name || url, url: url, failed: false });
+      activeId = tabSeq;
+    }
+    syncTabs();
+  }
+
+  function findTab(id) {
+    var out = null;
+    tabs.forEach(function (t) { if (t.id === id) out = t; });
+    return out;
+  }
+
+  function syncTabs() {
+    var host = $('#tabHost');
+    if (!host) return;
+
+    host.hidden = tabs.length === 0;
+    if (!tabs.length) { $('#tabFrames').innerHTML = ''; return; }
+    if (!findTab(activeId)) activeId = tabs[tabs.length - 1].id;
+
+    $('#tabList').innerHTML = tabs.map(function (t) {
+      return '<button class="tabitem' + (t.id === activeId ? ' on' : '') + '" type="button" data-id="' + t.id + '">' +
+        '<span>' + esc(t.name) + '</span>' +
+        '<i class="tabx" data-close="' + t.id + '" title="关闭">✕</i>' +
+        '</button>';
+    }).join('');
+
+    var box = $('#tabFrames');
+    tabs.forEach(function (t) {
+      var f = box.querySelector('iframe[data-id="' + t.id + '"]');
+      if (!f) {
+        f = document.createElement('iframe');
+        f.setAttribute('data-id', t.id);
+        f.setAttribute('referrerpolicy', 'no-referrer');
+        f.src = t.url;
+        box.appendChild(f);
+
+        var done = false;
+        f.addEventListener('load', function () {
+          done = true;
+          if (t.failed) { t.failed = false; paintTabFail(t.id, false); }
+        });
+        setTimeout(function () {
+          if (!done) { t.failed = true; paintTabFail(t.id, true); }
+        }, 7000);
+      }
+      f.hidden = t.id !== activeId;
+    });
+  }
+
+  /* 内嵌被拒或者一直不响应，给条退路，别让人对着白屏 */
+  function paintTabFail(id, on) {
+    var box = $('#tabFrames');
+    var old = box.querySelector('.tabfail[data-for="' + id + '"]');
+    if (old) old.parentNode.removeChild(old);
+    if (!on) return;
+
+    var d = document.createElement('div');
+    d.className = 'tabfail';
+    d.setAttribute('data-for', id);
+    d.innerHTML = '<div><b>这个页面没能嵌进来</b>' +
+      '<p>对方站点可能禁止被内嵌（X-Frame-Options），或者一直没有响应。</p>' +
+      '<button class="btn-line sm" type="button" data-pop="' + id + '">在新标签页打开</button>' +
+      '<button class="btn-line sm" type="button" data-retry="' + id + '">重试</button></div>';
+    box.appendChild(d);
+  }
+
+  function closeTab(id) {
+    var box = $('#tabFrames');
+    var f = box.querySelector('iframe[data-id="' + id + '"]');
+    if (f) f.parentNode.removeChild(f);
+    var d = box.querySelector('.tabfail[data-for="' + id + '"]');
+    if (d) d.parentNode.removeChild(d);
+
+    tabs = tabs.filter(function (t) { return t.id !== id; });
+    syncTabs();
+  }
+
+  function activeTab() { return findTab(activeId); }
+
+  function reloadActiveTab() {
+    var t = activeTab();
+    if (!t) return;
+    var f = $('#tabFrames').querySelector('iframe[data-id="' + t.id + '"]');
+    if (!f) return;
+    paintTabFail(t.id, false);
+    try { f.contentWindow.location.reload(); } catch (e) { f.src = t.url; }
+    toast('已刷新');
+  }
+
+  function openInNewTab(url) {
+    var a = document.createElement('a');
+    a.href = url;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
     a.style.display = 'none';
@@ -604,6 +726,7 @@
     $('#netPill').hidden = true;
     $('#settingsBtn').hidden = true;
     $('#userMenu').hidden = true;
+    if ($('#loginBtn')) $('#loginBtn').hidden = false;
     $('#offline').hidden = true;
 
     var si = $('#searchInput');
@@ -616,7 +739,17 @@
 
   function renderUser() {
     var menu = $('#userMenu');
-    if (!authUser) { menu.hidden = true; return; }
+
+    // 没登录：藏掉添加/设置，右上角换成「登录」
+    if (!authUser) {
+      menu.hidden = true;
+      $('#addBtn').hidden = true;
+      $('#settingsBtn').hidden = true;
+      if ($('#loginBtn')) $('#loginBtn').hidden = false;
+      return;
+    }
+
+    if ($('#loginBtn')) $('#loginBtn').hidden = true;
     menu.hidden = false;
 
     var name = authUser.name || authUser.username;
@@ -978,6 +1111,12 @@
     $('#s-probe').value = (s.probeUrls || []).join('\n');
     $('#lanFillBtn').hidden = !(state.lan && state.lan.length);
 
+    $('#s-font').value = s.fontFamily || '';
+    $('#s-open').value = s.openMode || (s.openInNewTab === false ? 'same' : 'new');
+    formInkLight = /^#[0-9a-fA-F]{6}$/.test(s.inkLight || '') ? s.inkLight : '';
+    formInkDark = /^#[0-9a-fA-F]{6}$/.test(s.inkDark || '') ? s.inkDark : '';
+    paintInk();
+
     var admin = isAdmin();
     $('#loginRow').hidden = !admin;
     $('#usersBtn2').hidden = !admin;
@@ -1210,6 +1349,13 @@
     });
   }
 
+  /* 颜色输入框：没设过就显示主题默认色，保存时留空表示跟随主题 */
+  function paintInk() {
+    $('#inkLight').value = formInkLight || '#1a2430';
+    $('#inkDark').value = formInkDark || '#e7edf3';
+    $('#inkReset').textContent = (formInkLight || formInkDark) ? '跟随主题' : '已是跟随主题';
+  }
+
   function saveSettings() {
     var payload = {
       company: $('#s-company').value.trim() || '企业服务大厅',
@@ -1222,13 +1368,18 @@
       logo: $('#s-logo').value.trim().slice(0, 2),
       brandColor: formBrand,
       netMode: $('#s-mode').value,
-      probeUrls: $('#s-probe').value.split('\n').map(normalizeUrl).filter(Boolean)
+      probeUrls: $('#s-probe').value.split('\n').map(normalizeUrl).filter(Boolean),
+      openMode: $('#s-open').value,
+      fontFamily: $('#s-font').value,
+      inkLight: formInkLight,
+      inkDark: formInkDark
     };
     if (isAdmin()) payload.requireLogin = $('#s-requireLogin').value !== '0';
 
     mutate('PUT', '/api/settings', payload, '设置已保存').then(function (ok) {
       if (!ok) return;
       closeModal($('#setModal'));
+      applyType();
       refreshNet();
     });
   }
@@ -1353,6 +1504,30 @@
   }
 
   /* 应用主题偏好：system | light | dark（存本地 + 同步到账号） */
+  var FONT_STACKS = {
+    '': '"PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif',
+    yahei: '"Microsoft YaHei", "PingFang SC", system-ui, sans-serif',
+    songti: '"Source Han Serif SC", "Noto Serif SC", SimSun, "Songti SC", serif',
+    simhei: 'SimHei, "Heiti SC", "Microsoft YaHei", sans-serif',
+    kaiti: 'KaiTi, "Kaiti SC", STKaiti, serif',
+    fangsong: 'FangSong, STFangsong, "Songti SC", serif',
+    dengxian: 'DengXian, "Microsoft YaHei", system-ui, sans-serif',
+    segoe: '"Segoe UI", "Microsoft YaHei", system-ui, sans-serif'
+  };
+
+  /* 字体与文字颜色：留空就跟主题走，不写死 */
+  function applyType() {
+    var root = document.documentElement;
+    var st = state.settings;
+
+    root.style.setProperty('--font-sans', FONT_STACKS[st.fontFamily] || FONT_STACKS['']);
+
+    var dark = root.getAttribute('data-theme') === 'dark';
+    var ink = dark ? st.inkDark : st.inkLight;
+    if (/^#[0-9a-fA-F]{6}$/.test(ink || '')) root.style.setProperty('--ink', ink);
+    else root.style.removeProperty('--ink');
+  }
+
   function applyThemeMode(mode, opts) {
     opts = opts || {};
     var m = THEME_MODES.indexOf(mode) > -1 ? mode : 'system';
@@ -1364,6 +1539,7 @@
     try { localStorage.setItem('cp-theme', m); } catch (e) {}
 
     applyHeroBackground();
+    applyType();
     paintThemeBtn(m, actual);
 
     // 登录用户把偏好存到自己的账号上，换设备也跟着走
@@ -1670,6 +1846,49 @@
 
     /* 设置 */
     $('#settingsBtn').addEventListener('click', openSettings);
+
+    $('#inkLight').addEventListener('input', function () { formInkLight = this.value; paintInk(); });
+    $('#inkDark').addEventListener('input', function () { formInkDark = this.value; paintInk(); });
+    $('#inkReset').addEventListener('click', function () {
+      formInkLight = '';
+      formInkDark = '';
+      paintInk();
+      toast('保存后跟随深浅主题');
+    });
+
+    /* ---- 站内页标签 ---- */
+    $('#tabList').addEventListener('click', function (e) {
+      var x = e.target.closest('[data-close]');
+      if (x) { closeTab(Number(x.getAttribute('data-close'))); return; }
+      var b = e.target.closest('[data-id]');
+      if (b) { activeId = Number(b.getAttribute('data-id')); syncTabs(); }
+    });
+
+    $('#tabFrames').addEventListener('click', function (e) {
+      var pop = e.target.closest('[data-pop]');
+      if (pop) {
+        var t1 = findTab(Number(pop.getAttribute('data-pop')));
+        if (t1) openInNewTab(t1.url);
+        return;
+      }
+      var re = e.target.closest('[data-retry]');
+      if (re) {
+        var id = Number(re.getAttribute('data-retry'));
+        var t2 = findTab(id);
+        var f = $('#tabFrames').querySelector('iframe[data-id="' + id + '"]');
+        paintTabFail(id, false);
+        if (f && t2) { f.src = 'about:blank'; setTimeout(function () { f.src = t2.url; }, 60); }
+      }
+    });
+
+    $('#tabReload').addEventListener('click', reloadActiveTab);
+    $('#tabPopup').addEventListener('click', function () {
+      var t = activeTab();
+      if (t) openInNewTab(t.url);
+    });
+    $('#tabCloseAll').addEventListener('click', function () {
+      tabs.forEach(function (t) { closeTab(t.id); });
+    });
     $('#setSaveBtn').addEventListener('click', saveSettings);
 
     /* 按钮在 <label> 里，不拦一下会被 label 的默认行为把焦点丢给 textarea */
@@ -1777,6 +1996,10 @@
 
     /* 网络模式切换 */
     $('#netPill').addEventListener('click', function () {
+      if (!canEdit()) {
+        toast(authUser ? '当前账号没有切换网络模式的权限' : '登录后可切换网络模式');
+        return;
+      }
       var order = ['auto', 'lan', 'wan'];
       var cur = order.indexOf(state.settings.netMode);
       var next = order[(cur + 1) % order.length];
@@ -1833,6 +2056,7 @@
       }
     } catch (e) {}
 
+    applyType();
     applyThemeMode(currentThemeMode(), { silent: true, local: true });
     renderBrand();
     paintNet();

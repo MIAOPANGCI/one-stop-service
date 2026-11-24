@@ -272,6 +272,9 @@ function publicUser(u) {
 /* ------------------------------------------------------------
  * 初始数据
  * ---------------------------------------------------------- */
+/* 可选字体，键存在才算合法，具体字体栈由前端拼 */
+const FONT_KEYS = ['', 'yahei', 'simsun', 'simhei', 'kaiti', 'fangsong', 'dengxian', 'segoe', 'songti'];
+
 const DEFAULT_SETTINGS = {
   company: '示例科技有限公司',
   companyEn: 'CORP · SERVICE PORTAL',
@@ -285,6 +288,10 @@ const DEFAULT_SETTINGS = {
   netMode: 'auto',
   probeUrls: [],
   openInNewTab: true,
+  openMode: 'new',          // new 新标签页 / same 当前页 / tab 站内页标签
+  fontFamily: '',           // 空 = 默认字体栈
+  inkLight: '',             // 空 = 跟随浅色主题
+  inkDark: '',              // 空 = 跟随深色主题
   requireLogin: true,
   updatedAt: null
 };
@@ -386,6 +393,11 @@ function loadDb() {
       if (!parsed || !Array.isArray(parsed.links)) throw new Error('数据文件格式不正确');
       parsed.settings = Object.assign({}, DEFAULT_SETTINGS, parsed.settings || {});
       db = parsed;
+
+      // 老数据只有 openInNewTab，换算成新的三选一
+      if (!db.settings.openMode) {
+        db.settings.openMode = db.settings.openInNewTab === false ? 'same' : 'new';
+      }
 
       // 老版本数据没有 users，补一个管理员
       if (!Array.isArray(db.users) || !db.users.length) {
@@ -1132,6 +1144,8 @@ const MIME = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.ico': 'image/x-icon',
+  '.bmp': 'image/bmp',
+  '.avif': 'image/avif',
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8'
 };
@@ -1141,9 +1155,15 @@ const MAX_UPLOAD = 6 * 1024 * 1024;   // 6MB
 const UPLOAD_TYPES = {
   'image/png': '.png',
   'image/jpeg': '.jpg',
+  'image/pjpeg': '.jpg',
   'image/webp': '.webp',
   'image/gif': '.gif',
-  'image/svg+xml': '.svg'
+  'image/svg+xml': '.svg',
+  'image/bmp': '.bmp',
+  'image/x-ms-bmp': '.bmp',
+  'image/avif': '.avif',
+  'image/x-icon': '.ico',
+  'image/vnd.microsoft.icon': '.ico'
 };
 
 // 用文件头校验真实类型，防止改扩展名传别的东西
@@ -1162,6 +1182,16 @@ function magicOk(buf, ext) {
   if (ext === '.webp') {
     return buf.slice(0, 4).toString('latin1') === 'RIFF' &&
       buf.slice(8, 12).toString('latin1') === 'WEBP';
+  }
+  if (ext === '.bmp') {
+    return buf.slice(0, 2).toString('latin1') === 'BM';
+  }
+  if (ext === '.avif') {
+    return buf.slice(4, 8).toString('latin1') === 'ftyp' &&
+      /^avi[fs]$/.test(buf.slice(8, 12).toString('latin1'));
+  }
+  if (ext === '.ico') {
+    return buf[0] === 0 && buf[1] === 0 && buf[2] === 1 && buf[3] === 0;
   }
   if (ext === '.svg') {
     const head = buf.slice(0, 400).toString('utf8').replace(/^\uFEFF/, '').trim().toLowerCase();
@@ -1496,7 +1526,7 @@ const server = http.createServer(function (req, res) {
 
     const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
     const ext = UPLOAD_TYPES[type];
-    if (!ext) return deny(400, '只支持 PNG / JPG / WebP / GIF / SVG 图片');
+    if (!ext) return deny(400, '只支持 PNG / JPG / WebP / GIF / SVG / BMP / AVIF / ICO 图片');
 
     const chunks = [];
     let size = 0;
@@ -1554,6 +1584,13 @@ const server = http.createServer(function (req, res) {
       if ('heroFoot' in body) s.heroFoot = cleanText(body.heroFoot, 40);
       if ('netMode' in body) s.netMode = ['auto', 'lan', 'wan'].indexOf(body.netMode) > -1 ? body.netMode : 'auto';
       if ('openInNewTab' in body) s.openInNewTab = Boolean(body.openInNewTab);
+      if ('openMode' in body) {
+        s.openMode = ['new', 'same', 'tab'].indexOf(body.openMode) > -1 ? body.openMode : 'new';
+        s.openInNewTab = s.openMode !== 'same';
+      }
+      if ('fontFamily' in body) s.fontFamily = FONT_KEYS.indexOf(String(body.fontFamily || '')) > -1 ? String(body.fontFamily || '') : '';
+      if ('inkLight' in body) s.inkLight = cleanHexColor(body.inkLight, '');
+      if ('inkDark' in body) s.inkDark = cleanHexColor(body.inkDark, '');
       if ('probeUrls' in body) {
         s.probeUrls = (Array.isArray(body.probeUrls) ? body.probeUrls : [])
           .map(function (u) { return cleanUrl(u); }).filter(Boolean).slice(0, 5);
@@ -1736,6 +1773,10 @@ const server = http.createServer(function (req, res) {
         if (Array.isArray(payload.settings.probeUrls)) {
           s.probeUrls = payload.settings.probeUrls.map(function (u) { return cleanUrl(u); }).filter(Boolean).slice(0, 5);
         }
+        if (FONT_KEYS.indexOf(String(payload.settings.fontFamily || '')) > -1) s.fontFamily = String(payload.settings.fontFamily || '');
+        if (payload.settings.inkLight) s.inkLight = cleanHexColor(payload.settings.inkLight, '');
+        if (payload.settings.inkDark) s.inkDark = cleanHexColor(payload.settings.inkDark, '');
+        if (['new', 'same', 'tab'].indexOf(payload.settings.openMode) > -1) s.openMode = payload.settings.openMode;
       }
 
       persist();

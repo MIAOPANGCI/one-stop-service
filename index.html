@@ -65,6 +65,8 @@
       </svg>
     </button>
 
+    <a class="nav-btn login-btn" id="loginBtn" href="/login.html" hidden>登录</a>
+
     <div class="user-menu" id="userMenu" hidden>
       <button class="user-btn" id="userBtn" type="button">
         <span class="user-avatar" id="userAvatar">·</span>
@@ -339,7 +341,7 @@
               <div class="hero-upl-btns">
                 <button class="btn-line sm" id="heroUploadBtn" type="button">上传图片</button>
                 <button class="btn-line sm" id="heroClearBtn" type="button" hidden>恢复默认</button>
-                <input id="heroFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+                <input id="heroFile" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg" hidden>
               </div>
             </div>
             <input id="s-heroImage" type="text" placeholder="也可以直接粘贴图片地址">
@@ -355,13 +357,27 @@
               <div class="hero-upl-btns">
                 <button class="btn-line sm" id="heroUploadBtnDark" type="button">上传图片</button>
                 <button class="btn-line sm" id="heroClearBtnDark" type="button" hidden>恢复默认</button>
-                <input id="heroFileDark" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+                <input id="heroFileDark" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg" hidden>
               </div>
             </div>
             <input id="s-heroImageDark" type="text" placeholder="也可以直接粘贴图片地址">
           </div>
 
-          <small class="hint">建议 1920×1080，单张不超过 6MB。</small>
+          <small class="hint">建议 1920×1080，支持 JPG / PNG / WebP / GIF / BMP / AVIF / SVG，单张不超过 6MB。</small>
+        </section>
+
+        <section class="set-sec">
+          <div class="group-label">打开方式</div>
+
+          <label class="field">
+            <span>点开服务时</span>
+            <select id="s-open">
+              <option value="new">新开浏览器标签页</option>
+              <option value="tab">在当前页面用页标签打开</option>
+              <option value="same">当前页直接跳转</option>
+            </select>
+            <small class="hint">页标签是内嵌在门户里；对方站点若禁止被内嵌，会提示改用新标签页。</small>
+          </label>
         </section>
 
         <section class="set-sec">
@@ -403,6 +419,40 @@
               <input type="color" id="brandColor" value="#2fa795">
             </label>
             <input type="text" id="brandHex" class="hex-input" maxlength="7" placeholder="#2fa795" spellcheck="false">
+          </div>
+        </section>
+
+        <section class="set-sec">
+          <div class="group-label">字体与文字</div>
+
+          <label class="field">
+            <span>字体</span>
+            <select id="s-font">
+              <option value="">默认（苹方 / 微软雅黑）</option>
+              <option value="yahei">微软雅黑</option>
+              <option value="songti">宋体 / 思源宋体</option>
+              <option value="simhei">黑体</option>
+              <option value="kaiti">楷体</option>
+              <option value="fangsong">仿宋</option>
+              <option value="dengxian">等线</option>
+              <option value="segoe">Segoe UI（西文优先）</option>
+            </select>
+          </label>
+
+          <div class="field">
+            <span>文字颜色</span>
+            <div class="ink-row">
+              <label class="ink-item">
+                <input type="color" id="inkLight" value="#1a2430">
+                <em>日间</em>
+              </label>
+              <label class="ink-item">
+                <input type="color" id="inkDark" value="#e7edf3">
+                <em>夜间</em>
+              </label>
+              <button class="btn-line sm" id="inkReset" type="button">已是跟随主题</button>
+            </div>
+            <small class="hint">留空即跟随深浅主题；改过之后按选定颜色显示，注意和壁纸的对比度。</small>
           </div>
         </section>
 
@@ -462,6 +512,18 @@
       <button class="btn-primary" id="confirmOk" type="button">确定</button>
     </div>
   </div>
+</div>
+
+<div class="tabhost" id="tabHost" hidden>
+  <div class="tabbar">
+    <div class="tablist" id="tabList"></div>
+    <div class="tabtools">
+      <button class="tabtool" id="tabReload" type="button" title="刷新当前页">刷新</button>
+      <button class="tabtool" id="tabPopup" type="button" title="在新标签页打开">新窗口</button>
+      <button class="tabtool" id="tabCloseAll" type="button" title="关闭全部页标签">关闭全部</button>
+    </div>
+  </div>
+  <div class="tabframes" id="tabFrames"></div>
 </div>
 
 <div class="toast" id="toast" hidden></div>
