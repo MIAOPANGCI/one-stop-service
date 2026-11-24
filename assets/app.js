@@ -464,6 +464,7 @@
         f.addEventListener('load', function () {
           done = true;
           if (t.failed) { t.failed = false; paintTabFail(t.id, false); }
+          adoptSameOrigin(f);
         });
         setTimeout(function () {
           if (!done) { t.failed = true; paintTabFail(t.id, true); }
@@ -471,6 +472,29 @@
       }
       f.hidden = homeOn || t.id !== activeId;
     });
+  }
+
+  /* 同源页面才拿得到它的 window：把新窗口截下来，开成我们的页签。
+     跨域页面受同源策略限制，改不了它的链接，只能交给浏览器。 */
+  function adoptSameOrigin(f) {
+    try {
+      var w = f.contentWindow;
+      if (!w || w.location.origin !== location.origin) return;
+      if (w.__tabAdopted) return;
+      w.__tabAdopted = true;
+
+      w.open = function (url) {
+        if (url) openTab(String(url), String(url));
+        return w;
+      };
+
+      w.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest && e.target.closest('a[target="_blank"]');
+        if (!a || !a.href) return;
+        e.preventDefault();
+        openTab((a.textContent || '').trim() || a.href, a.href);
+      }, true);
+    } catch (e) { /* 跨域访问会抛，正常 */ }
   }
 
   /* 内嵌被拒或者一直不响应，给条退路，别让人对着白屏 */
@@ -1233,6 +1257,7 @@
     formInkLight = /^#[0-9a-fA-F]{6}$/.test(s.inkLight || '') ? s.inkLight : '';
     formInkDark = /^#[0-9a-fA-F]{6}$/.test(s.inkDark || '') ? s.inkDark : '';
     paintInk();
+    setPane(0);
 
     var admin = isAdmin();
     $('#loginRow').hidden = !admin;
@@ -1471,6 +1496,18 @@
     $('#inkLight').value = formInkLight || '#1a2430';
     $('#inkDark').value = formInkDark || '#e7edf3';
     $('#inkReset').textContent = (formInkLight || formInkDark) ? '跟随主题' : '已是跟随主题';
+  }
+
+  /* 设置分页：一次只看一类，别堆在一起 */
+  function setPane(idx) {
+    Array.prototype.forEach.call(document.querySelectorAll('#setNav .set-nav-btn'), function (b, i) {
+      b.classList.toggle('on', i === idx);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#setPanes .set-pane'), function (p, i) {
+      p.hidden = i !== idx;
+    });
+    var box = $('#setPanes');
+    if (box) box.scrollTop = 0;
   }
 
   function saveSettings() {
@@ -1994,6 +2031,11 @@
 
     /* 设置 */
     $('#settingsBtn').addEventListener('click', openSettings);
+
+    $('#setNav').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-pane]');
+      if (b) setPane(Number(b.getAttribute('data-pane')));
+    });
 
     $('#inkLight').addEventListener('input', function () { formInkLight = this.value; paintInk(); });
     $('#inkDark').addEventListener('input', function () { formInkDark = this.value; paintInk(); });

@@ -235,259 +235,271 @@
     </div>
 
     <div class="modal-body set-body">
-
-      <!-- ========== 第 1 栏：品牌 ========== -->
-      <div class="set-col">
+  <div class="set-shell">
+    <nav class="set-nav" id="setNav">
+        <button class="set-nav-btn on" type="button" data-pane="0">站点</button>
+        <button class="set-nav-btn" type="button" data-pane="1">壁纸</button>
+        <button class="set-nav-btn" type="button" data-pane="2">主题配色</button>
+        <button class="set-nav-btn" type="button" data-pane="3">字体与文字</button>
+        <button class="set-nav-btn" type="button" data-pane="4">打开与网络</button>
+        <button class="set-nav-btn" type="button" data-pane="5">数据与权限</button>
+    </nav>
+    <div class="set-panes" id="setPanes">
+      <div class="set-pane" data-pane="0">
         <section class="set-sec">
-          <div class="group-label">品牌信息</div>
+                                  <div class="group-label">品牌信息</div>
 
-          <label class="field">
-            <span>大厅名称</span>
-            <input id="s-company" type="text" maxlength="24" placeholder="示例科技有限公司">
-          </label>
+                                  <label class="field">
+                                    <span>大厅名称</span>
+                                    <input id="s-company" type="text" maxlength="24" placeholder="示例科技有限公司">
+                                  </label>
 
-          <div class="field">
-            <span>Logo</span>
-            <div class="upl">
-              <div class="upl-box" id="logoBox">
-                <span class="upl-text" id="logoText">企</span>
-                <img id="logoImg" alt="" hidden>
-              </div>
-              <div class="upl-side">
-                <div class="upl-btns">
-                  <button class="btn-line sm" id="logoUploadBtn" type="button">上传图片</button>
-                  <button class="btn-line sm" id="logoClearBtn" type="button" hidden>移除</button>
-                  <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif" hidden>
-                </div>
-                <small class="hint">方形或横版皆可，高度建议 ≥128</small>
-              </div>
-            </div>
-          </div>
+                                  <div class="field">
+                                    <span>Logo</span>
+                                    <div class="upl">
+                                      <div class="upl-box" id="logoBox">
+                                        <span class="upl-text" id="logoText">企</span>
+                                        <img id="logoImg" alt="" hidden>
+                                      </div>
+                                      <div class="upl-side">
+                                        <div class="upl-btns">
+                                          <button class="btn-line sm" id="logoUploadBtn" type="button">上传图片</button>
+                                          <button class="btn-line sm" id="logoClearBtn" type="button" hidden>移除</button>
+                                          <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif" hidden>
+                                        </div>
+                                        <small class="hint">方形或横版皆可，高度建议 ≥128</small>
+                                      </div>
+                                    </div>
+                                  </div>
 
-          <div class="row2">
-            <label class="field">
-              <span>Logo 文字</span>
-              <input id="s-logo" type="text" maxlength="2" placeholder="企">
-            </label>
-            <label class="field">
-              <span>英文名</span>
-              <input id="s-companyEn" type="text" maxlength="48" placeholder="CORP PORTAL">
-            </label>
-          </div>
+                                  <div class="row2">
+                                    <label class="field">
+                                      <span>Logo 文字</span>
+                                      <input id="s-logo" type="text" maxlength="2" placeholder="企">
+                                    </label>
+                                    <label class="field">
+                                      <span>英文名</span>
+                                      <input id="s-companyEn" type="text" maxlength="48" placeholder="CORP PORTAL">
+                                    </label>
+                                  </div>
 
-          <label class="field">
-            <span>一句话介绍</span>
-            <input id="s-slogan" type="text" maxlength="30" placeholder="一站式内部服务平台">
-          </label>
+                                  <label class="field">
+                                    <span>一句话介绍</span>
+                                    <input id="s-slogan" type="text" maxlength="30" placeholder="一站式内部服务平台">
+                                  </label>
 
-          <label class="field">
-            <span>底部提示语</span>
-            <input id="s-heroFoot" type="text" maxlength="40" placeholder="我们为你准备了丰富的内部服务">
-          </label>
-        </section>
-
-        <section class="set-sec">
-          <div class="group-label">权限与数据</div>
-
-          <label class="field" id="loginRow" hidden>
-            <span>访问控制</span>
-            <select id="s-requireLogin">
-              <option value="1">必须登录才能访问（推荐）</option>
-              <option value="0">游客可直接浏览</option>
-            </select>
-            <small class="hint">仅管理员可修改</small>
-          </label>
-
-          <div class="io-row">
-            <button class="btn-line sm" id="exportBtn" type="button">导出</button>
-            <button class="btn-line sm" id="importBtn" type="button">导入</button>
-            <button class="btn-line sm" id="usersBtn2" type="button" hidden>用户</button>
-            <input id="importFile" type="file" accept="application/zip,.zip,application/json,.json" hidden>
-          </div>
-          <small class="hint">导出的 zip 里有服务、设置和正在使用的图片；早期版本的 json 备份也还能导入。</small>
-
-          <p class="hint" id="serverInfo"></p>
-
-          <div class="io-row">
-            <button class="btn-line sm" id="sweepBtn" type="button" hidden>清理图片</button>
-            <span class="hint" id="uploadStat"></span>
-          </div>
-
-          <div class="ver-row">
-            <span class="ver-tag" id="verTag">v—</span>
-            <button class="btn-line sm" id="checkUpdateBtn" type="button">检查更新</button>
-          </div>
-          <div class="upd-box" id="updBox" hidden></div>
-        </section>
+                                  <label class="field">
+                                    <span>底部提示语</span>
+                                    <input id="s-heroFoot" type="text" maxlength="40" placeholder="我们为你准备了丰富的内部服务">
+                                  </label>
+                                </section>
       </div>
 
-      <!-- ========== 第 2 栏：壁纸 + 内外网 ========== -->
-      <div class="set-col">
+      <div class="set-pane" data-pane="1" hidden>
         <section class="set-sec">
-          <div class="group-label">首屏壁纸</div>
+                                  <div class="group-label">首屏壁纸</div>
 
-          <div class="wall-tabs">
-            <button class="wall-tab on" type="button" data-wall="light">日间模式</button>
-            <button class="wall-tab" type="button" data-wall="dark">夜间模式</button>
-          </div>
+                                  <div class="wall-tabs">
+                                    <button class="wall-tab on" type="button" data-wall="light">日间模式</button>
+                                    <button class="wall-tab" type="button" data-wall="dark">夜间模式</button>
+                                  </div>
 
-          <div class="wall-pane" id="wallLight">
-            <div class="wall-presets" id="presetLight"></div>
+                                  <div class="wall-pane" id="wallLight">
+                                    <div class="wall-presets" id="presetLight"></div>
 
-            <div class="hero-upl">
-              <div class="hero-upl-img" id="heroImgBox">
-                <span class="hero-upl-empty">当前使用默认渐变山景</span>
-              </div>
-              <div class="hero-upl-btns">
-                <button class="btn-line sm" id="heroUploadBtn" type="button">上传图片</button>
-                <button class="btn-line sm" id="heroClearBtn" type="button" hidden>恢复默认</button>
-                <input id="heroFile" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg" hidden>
-              </div>
-            </div>
-            <input id="s-heroImage" type="text" placeholder="也可以直接粘贴图片地址">
-          </div>
+                                    <div class="hero-upl">
+                                      <div class="hero-upl-img" id="heroImgBox">
+                                        <span class="hero-upl-empty">当前使用默认渐变山景</span>
+                                      </div>
+                                      <div class="hero-upl-btns">
+                                        <button class="btn-line sm" id="heroUploadBtn" type="button">上传图片</button>
+                                        <button class="btn-line sm" id="heroClearBtn" type="button" hidden>恢复默认</button>
+                                        <input id="heroFile" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg" hidden>
+                                      </div>
+                                    </div>
+                                    <input id="s-heroImage" type="text" placeholder="也可以直接粘贴图片地址">
+                                  </div>
 
-          <div class="wall-pane" id="wallDark" hidden>
-            <div class="wall-presets" id="presetDark"></div>
+                                  <div class="wall-pane" id="wallDark" hidden>
+                                    <div class="wall-presets" id="presetDark"></div>
 
-            <div class="hero-upl">
-              <div class="hero-upl-img" id="heroImgBoxDark">
-                <span class="hero-upl-empty">未设置时沿用日间壁纸</span>
-              </div>
-              <div class="hero-upl-btns">
-                <button class="btn-line sm" id="heroUploadBtnDark" type="button">上传图片</button>
-                <button class="btn-line sm" id="heroClearBtnDark" type="button" hidden>恢复默认</button>
-                <input id="heroFileDark" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg" hidden>
-              </div>
-            </div>
-            <input id="s-heroImageDark" type="text" placeholder="也可以直接粘贴图片地址">
-          </div>
+                                    <div class="hero-upl">
+                                      <div class="hero-upl-img" id="heroImgBoxDark">
+                                        <span class="hero-upl-empty">未设置时沿用日间壁纸</span>
+                                      </div>
+                                      <div class="hero-upl-btns">
+                                        <button class="btn-line sm" id="heroUploadBtnDark" type="button">上传图片</button>
+                                        <button class="btn-line sm" id="heroClearBtnDark" type="button" hidden>恢复默认</button>
+                                        <input id="heroFileDark" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg" hidden>
+                                      </div>
+                                    </div>
+                                    <input id="s-heroImageDark" type="text" placeholder="也可以直接粘贴图片地址">
+                                  </div>
 
-          <div class="field">
-            <span>首屏光晕</span>
-            <select id="s-glow">
-              <option value="1">显示（左上亮斑 + 右下暗角）</option>
-              <option value="0">关闭</option>
-            </select>
-          </div>
+                                  <div class="field">
+                                    <span>首屏光晕</span>
+                                    <select id="s-glow">
+                                      <option value="1">显示（左上亮斑 + 右下暗角）</option>
+                                      <option value="0">关闭</option>
+                                    </select>
+                                  </div>
 
-          <div class="field">
-            <span>光晕颜色</span>
-            <div class="ink-row">
-              <label class="ink-item">
-                <input type="color" id="glowColor" value="#69e7c7">
-                <em>亮斑与暗角同色系</em>
-              </label>
-              <button class="btn-line sm" id="glowReset" type="button">恢复默认</button>
-            </div>
-            <small class="hint">只影响壁纸上的光斑，不动图片本身；建议 1920×1080，支持 JPG / PNG / WebP / GIF / BMP / AVIF / SVG，单张不超过 6MB。</small>
-          </div>
-        </section>
-
-        <section class="set-sec">
-          <div class="group-label">打开方式</div>
-
-          <label class="field">
-            <span>点开服务时</span>
-            <select id="s-open">
-              <option value="new">新开浏览器标签页</option>
-              <option value="tab">在当前页面用页标签打开</option>
-              <option value="same">当前页直接跳转</option>
-            </select>
-            <small class="hint">页标签是内嵌在门户里；对方站点若禁止被内嵌，会提示改用新标签页。</small>
-          </label>
-
-          <label class="field">
-            <span>页签里的新窗口</span>
-            <select id="s-tabpop">
-              <option value="allow">放行（推荐）</option>
-              <option value="block">拦掉，留在页签内</option>
-            </select>
-            <small class="hint">内网系统常用 target="_blank" 开子页面。拦掉会让它「点了没反应」，所以默认放行：点开的子页面会出现在浏览器新标签里。</small>
-          </label>
-        </section>
-
-        <section class="set-sec">
-          <div class="group-label">内外网</div>
-
-          <label class="field">
-            <span>网络模式</span>
-            <select id="s-mode">
-              <option value="auto">自动识别（推荐）</option>
-              <option value="lan">始终使用内网地址</option>
-              <option value="wan">始终使用外网地址</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>内网探测地址</span>
-            <textarea id="s-probe" rows="2" placeholder="http://192.168.3.1&#10;http://192.168.8.1:8000/ping"></textarea>
-            <div class="probe-row">
-              <button class="btn-line sm" id="probeTestBtn" type="button">测试连通</button>
-              <button class="btn-line sm" id="lanFillBtn" type="button" hidden>用本机内网地址</button>
-              <span class="probe-res" id="probeRes"></span>
-            </div>
-            <small class="hint">每行一个，能连上任意一个即判定为内网。填内网网关，或任意只有内网能打开的地址；只响应 ping、没开网页端口的设备不行（浏览器发不了 ICMP），这种情况点「用本机内网地址」。</small>
-          </label>
-        </section>
+                                  <div class="field">
+                                    <span>光晕颜色</span>
+                                    <div class="ink-row">
+                                      <label class="ink-item">
+                                        <input type="color" id="glowColor" value="#69e7c7">
+                                        <em>亮斑与暗角同色系</em>
+                                      </label>
+                                      <button class="btn-line sm" id="glowReset" type="button">恢复默认</button>
+                                    </div>
+                                    <small class="hint">只影响壁纸上的光斑，不动图片本身；建议 1920×1080，支持 JPG / PNG / WebP / GIF / BMP / AVIF / SVG，单张不超过 6MB。</small>
+                                  </div>
+                                </section>
       </div>
 
-      <!-- ========== 第 3 栏：主题 + 数据 ========== -->
-      <div class="set-col">
+      <div class="set-pane" data-pane="2" hidden>
         <section class="set-sec">
-          <div class="group-label">主题配色</div>
+                                  <div class="group-label">主题配色</div>
 
-          <div class="swatches" id="brandPick"></div>
+                                  <div class="swatches" id="brandPick"></div>
 
-          <div class="palette" id="palette"></div>
+                                  <div class="palette" id="palette"></div>
 
-          <div class="brand-custom">
-            <label class="color-well" title="选择任意颜色">
-              <input type="color" id="brandColor" value="#2fa795">
-            </label>
-            <input type="text" id="brandHex" class="hex-input" maxlength="7" placeholder="#2fa795" spellcheck="false">
-          </div>
-        </section>
+                                  <div class="brand-custom">
+                                    <label class="color-well" title="选择任意颜色">
+                                      <input type="color" id="brandColor" value="#2fa795">
+                                    </label>
+                                    <input type="text" id="brandHex" class="hex-input" maxlength="7" placeholder="#2fa795" spellcheck="false">
+                                  </div>
+                                </section>
+      </div>
+
+      <div class="set-pane" data-pane="3" hidden>
+        <section class="set-sec">
+                                  <div class="group-label">字体与文字</div>
+
+                                  <label class="field">
+                                    <span>字体</span>
+                                    <select id="s-font">
+                                      <option value="">默认（苹方 / 微软雅黑）</option>
+                                      <option value="yahei">微软雅黑</option>
+                                      <option value="songti">宋体 / 思源宋体</option>
+                                      <option value="simhei">黑体</option>
+                                      <option value="kaiti">楷体</option>
+                                      <option value="fangsong">仿宋</option>
+                                      <option value="dengxian">等线</option>
+                                      <option value="segoe">Segoe UI（西文优先）</option>
+                                    </select>
+                                  </label>
+
+                                  <div class="field">
+                                    <span>文字颜色</span>
+                                    <div class="ink-row">
+                                      <label class="ink-item">
+                                        <input type="color" id="inkLight" value="#1a2430">
+                                        <em>日间</em>
+                                      </label>
+                                      <label class="ink-item">
+                                        <input type="color" id="inkDark" value="#e7edf3">
+                                        <em>夜间</em>
+                                      </label>
+                                      <button class="btn-line sm" id="inkReset" type="button">已是跟随主题</button>
+                                    </div>
+                                    <small class="hint">留空即跟随深浅主题；改过之后按选定颜色显示，注意和壁纸的对比度。</small>
+                                  </div>
+                                </section>
+      </div>
+
+      <div class="set-pane" data-pane="4" hidden>
+        <section class="set-sec">
+                                  <div class="group-label">打开方式</div>
+
+                                  <label class="field">
+                                    <span>点开服务时</span>
+                                    <select id="s-open">
+                                      <option value="new">新开浏览器标签页</option>
+                                      <option value="tab">在当前页面用页标签打开</option>
+                                      <option value="same">当前页直接跳转</option>
+                                    </select>
+                                    <small class="hint">页标签是内嵌在门户里；对方站点若禁止被内嵌，会提示改用新标签页。</small>
+                                  </label>
+
+                                  <label class="field">
+                                    <span>页签里的新窗口</span>
+                                    <select id="s-tabpop">
+                                      <option value="allow">放行（推荐）</option>
+                                      <option value="block">拦掉，留在页签内</option>
+                                    </select>
+                                    <small class="hint">内网系统常用 target="_blank" 开子页面。拦掉会让它「点了没反应」，所以默认放行：点开的子页面会出现在浏览器新标签里。</small>
+                                  </label>
+                                </section>
 
         <section class="set-sec">
-          <div class="group-label">字体与文字</div>
+                                  <div class="group-label">内外网</div>
 
-          <label class="field">
-            <span>字体</span>
-            <select id="s-font">
-              <option value="">默认（苹方 / 微软雅黑）</option>
-              <option value="yahei">微软雅黑</option>
-              <option value="songti">宋体 / 思源宋体</option>
-              <option value="simhei">黑体</option>
-              <option value="kaiti">楷体</option>
-              <option value="fangsong">仿宋</option>
-              <option value="dengxian">等线</option>
-              <option value="segoe">Segoe UI（西文优先）</option>
-            </select>
-          </label>
+                                  <label class="field">
+                                    <span>网络模式</span>
+                                    <select id="s-mode">
+                                      <option value="auto">自动识别（推荐）</option>
+                                      <option value="lan">始终使用内网地址</option>
+                                      <option value="wan">始终使用外网地址</option>
+                                    </select>
+                                  </label>
 
-          <div class="field">
-            <span>文字颜色</span>
-            <div class="ink-row">
-              <label class="ink-item">
-                <input type="color" id="inkLight" value="#1a2430">
-                <em>日间</em>
-              </label>
-              <label class="ink-item">
-                <input type="color" id="inkDark" value="#e7edf3">
-                <em>夜间</em>
-              </label>
-              <button class="btn-line sm" id="inkReset" type="button">已是跟随主题</button>
-            </div>
-            <small class="hint">留空即跟随深浅主题；改过之后按选定颜色显示，注意和壁纸的对比度。</small>
-          </div>
-        </section>
+                                  <label class="field">
+                                    <span>内网探测地址</span>
+                                    <textarea id="s-probe" rows="2" placeholder="http://192.168.3.1&#10;http://192.168.8.1:8000/ping"></textarea>
+                                    <div class="probe-row">
+                                      <button class="btn-line sm" id="probeTestBtn" type="button">测试连通</button>
+                                      <button class="btn-line sm" id="lanFillBtn" type="button" hidden>用本机内网地址</button>
+                                      <span class="probe-res" id="probeRes"></span>
+                                    </div>
+                                    <small class="hint">每行一个，能连上任意一个即判定为内网。填内网网关，或任意只有内网能打开的地址；只响应 ping、没开网页端口的设备不行（浏览器发不了 ICMP），这种情况点「用本机内网地址」。</small>
+                                  </label>
+                                </section>
+      </div>
 
-        
+      <div class="set-pane" data-pane="5" hidden>
+        <section class="set-sec">
+                                  <div class="group-label">权限与数据</div>
+
+                                  <label class="field" id="loginRow" hidden>
+                                    <span>访问控制</span>
+                                    <select id="s-requireLogin">
+                                      <option value="1">必须登录才能访问（推荐）</option>
+                                      <option value="0">游客可直接浏览</option>
+                                    </select>
+                                    <small class="hint">仅管理员可修改</small>
+                                  </label>
+
+                                  <div class="io-row">
+                                    <button class="btn-line sm" id="exportBtn" type="button">导出</button>
+                                    <button class="btn-line sm" id="importBtn" type="button">导入</button>
+                                    <button class="btn-line sm" id="usersBtn2" type="button" hidden>用户</button>
+                                    <input id="importFile" type="file" accept="application/zip,.zip,application/json,.json" hidden>
+                                  </div>
+                                  <small class="hint">导出的 zip 里有服务、设置和正在使用的图片；早期版本的 json 备份也还能导入。</small>
+
+                                  <p class="hint" id="serverInfo"></p>
+
+                                  <div class="io-row">
+                                    <button class="btn-line sm" id="sweepBtn" type="button" hidden>清理图片</button>
+                                    <span class="hint" id="uploadStat"></span>
+                                  </div>
+
+                                  <div class="ver-row">
+                                    <span class="ver-tag" id="verTag">v—</span>
+                                    <button class="btn-line sm" id="checkUpdateBtn" type="button">检查更新</button>
+                                  </div>
+                                  <div class="upd-box" id="updBox" hidden></div>
+                                </section>
       </div>
     </div>
+  </div>
+</div>
 
-    <div class="modal-foot">
+<div class="modal-foot">
       <div class="spacer"></div>
       <button class="btn-text" type="button" data-close>取消</button>
       <button class="btn-primary" id="setSaveBtn" type="button">保存</button>

@@ -1826,17 +1826,58 @@ html[data-theme="light"] .auth-veil {
 /* ===========================================================
    大厅设置：两栏布局
    =========================================================== */
-.set-card { max-width: 880px; }
+.set-card { max-width: 940px; }
 
-.set-body {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: start;
-  gap: 0 32px;
-  padding: 4px 28px 12px;
+.set-body { padding: 4px 20px 12px; }
+
+/* 左侧分页导航：一屏只放一类设置，不再三栏堆叠 */
+.set-shell {
+  display: flex;
+  gap: 20px;
+  height: min(74vh, 640px);
 }
 
-.set-col { min-width: 0; }
+.set-nav {
+  flex-shrink: 0;
+  width: 116px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px 6px 0;
+  border-right: 1px solid var(--line);
+}
+
+.set-nav-btn {
+  text-align: left;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .16s var(--ease), color .16s var(--ease);
+}
+.set-nav-btn:hover { background: var(--field); color: var(--ink); }
+.set-nav-btn.on {
+  background: color-mix(in srgb, var(--brand) 13%, transparent);
+  color: var(--brand);
+  font-weight: 500;
+}
+
+.set-panes {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 10px 8px 2px;
+}
+
+.set-pane[hidden] { display: none; }
+.set-pane > .set-sec:first-child { padding-top: 4px; }
+.set-pane .set-sec + .set-sec { margin-top: 6px; }
 
 .set-sec { padding: 16px 0 6px; }
 .set-sec + .set-sec {
@@ -2082,23 +2123,16 @@ html[data-theme-mode="system"] .theme-btn::after {
    设置弹窗：三栏
    =========================================================== */
 .set-card {
-  max-width: 1140px;
+  max-width: 940px;
   height: auto;
   max-height: calc(100vh - 48px);
 }
 
-.set-body {
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0 26px;
-}
+/* 现在是「左导航 + 单栏内容」，不再分栏 */
+.set-body { padding: 4px 18px 12px; }
 
-@media (max-width: 1080px) {
-  .set-card { max-width: 880px; }
-  .set-body { grid-template-columns: 1fr 1fr; }
-}
-@media (max-width: 780px) {
+@media (max-width: 940px) {
   .set-card { max-width: 100%; }
-  .set-body { grid-template-columns: 1fr; gap: 0; }
 }
 
 /* ===========================================================
@@ -2810,3 +2844,21 @@ body.has-tabs .nav { top: var(--tab-h); }
 .pick-list { max-height: calc(62vh - 56px); overflow-y: auto; }
 
 .tabitem.tab-home { flex-shrink: 0; font-weight: 500; }
+
+
+@media (max-width: 900px) {
+  .set-shell { flex-direction: column; gap: 8px; height: auto; max-height: 74vh; }
+  .set-nav {
+    flex-direction: row;
+    width: auto;
+    gap: 6px;
+    padding: 0 0 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .set-nav::-webkit-scrollbar { display: none; }
+  .set-nav-btn { white-space: nowrap; }
+  .set-panes { overflow-y: auto; padding-right: 4px; }
+}
