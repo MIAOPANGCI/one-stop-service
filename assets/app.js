@@ -1054,6 +1054,14 @@
     if (mask) mask.parentNode.removeChild(mask);
   }
 
+  /* 更新完不能只 reload：浏览器可能还拿缓存里的旧 app.js / style.css，
+     表现是界面写着新版本号、行为却还是老的。带一个时间戳把缓存绕开。 */
+  function hardReload() {
+    var u = new URL(location.href);
+    u.searchParams.set('_r', Date.now().toString(36));
+    location.replace(u.toString());
+  }
+
   function waitRestart(to) {
     var started = Date.now();
     var timer = setInterval(function () {
@@ -1062,8 +1070,8 @@
         .then(function (d) {
           if (d && d.version === to) {
             clearInterval(timer);
-            updMask('更新完成', '新版本 v' + to + ' 已就绪，正在刷新…');
-            setTimeout(function () { location.reload(); }, 900);
+            updMask('更新完成', '新版本 v' + to + ' 已就绪，正在重新加载…');
+            setTimeout(hardReload, 900);
           } else {
             updMask('正在启动新版本', '服务重启中，请稍候…');
           }
@@ -1074,7 +1082,7 @@
 
       if (Date.now() - started > 90000) {
         clearInterval(timer);
-        updMask('更新超时', '已等待 90 秒仍未恢复，请手动刷新页面或查看 data/update.log');
+        updMask('更新超时', '已等待 90 秒仍未恢复，请按 Ctrl+F5 强制刷新，或查看 data/update.log');
       }
     }, 1500);
   }
@@ -1816,6 +1824,15 @@
 
   /* ---------------- 启动 ---------------- */
   document.addEventListener('DOMContentLoaded', function () {
+    /* 更新后硬刷新带的时间戳，用完从地址栏抹掉 */
+    try {
+      if (location.search.indexOf('_r=') > -1) {
+        var clean = new URL(location.href);
+        clean.searchParams.delete('_r');
+        history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
+      }
+    } catch (e) {}
+
     applyThemeMode(currentThemeMode(), { silent: true, local: true });
     renderBrand();
     paintNet();
@@ -1833,3 +1850,4 @@
     } catch (e) {}
   });
 })();
+

@@ -1217,13 +1217,26 @@ function serveStatic(req, res, pathname) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404 Not Found');
       return;
     }
+    // 静态文件一律走协商缓存：没变只回 304，变了立刻拿到新内容。
+    // 之前 js/css 用 max-age=300，更新完版本刷新还可能是旧的 app.js，
+    // 界面看着新了、行为还是老的，排查起来很费劲。
+    const lastMod = st.mtime.toUTCString();
+    const ims = req.headers['if-modified-since'];
+    if (ims) {
+      const t = Date.parse(ims);
+      if (!isNaN(t) && Math.floor(st.mtimeMs / 1000) <= Math.floor(t / 1000)) {
+        res.writeHead(304, { 'Cache-Control': 'no-cache', 'Last-Modified': lastMod });
+        res.end();
+        return;
+      }
+    }
+
     const ext = path.extname(target).toLowerCase();
-    const isHtml = ext === '.html';
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Content-Length': st.size,
-      'Cache-Control': isHtml ? 'no-cache' : 'public, max-age=300',
-      'Last-Modified': st.mtime.toUTCString()
+      'Cache-Control': 'no-cache',
+      'Last-Modified': lastMod
     });
     fs.createReadStream(target).pipe(res);
   });
