@@ -52,7 +52,8 @@
       company: '企业服务大厅', companyEn: 'CORP · SERVICE PORTAL', slogan: '一站式内部服务平台',
       logo: '企', brandColor: '#2fa795', heroImage: '', heroFoot: '我们为你准备了丰富的内部服务',
       netMode: 'auto', probeUrls: [], openInNewTab: true, openMode: 'new',
-      fontFamily: '', inkLight: '', inkDark: '', updatedAt: null
+      fontFamily: '', inkLight: '', inkDark: '',
+      heroGlow: true, glowColor: '', updatedAt: null
     },
     links: [],
     version: '',
@@ -71,6 +72,7 @@
   var formColor = PALETTE[0];
   var formBrand = BRAND_THEMES[0].color;
   var formLogoImage = '';
+  var formGlow = '';
   var formInkLight = '';
   var formInkDark = '';
   var formHeroImage = '';
@@ -367,6 +369,7 @@
   var tabs = [];
   var activeId = 0;
   var tabSeq = 0;
+  var tabsCollapsed = false;   // 「门户」按钮把页标签收起来，但不清掉
 
   function openTab(name, url) {
     if (!url) return;
@@ -380,6 +383,8 @@
       tabs.push({ id: ++tabSeq, name: name || url, url: url, failed: false });
       activeId = tabSeq;
     }
+    tabsCollapsed = false;
+    hidePicker();
     syncTabs();
   }
 
@@ -393,7 +398,7 @@
     var host = $('#tabHost');
     if (!host) return;
 
-    host.hidden = tabs.length === 0;
+    host.hidden = tabs.length === 0 || tabsCollapsed;
     if (!tabs.length) { $('#tabFrames').innerHTML = ''; return; }
     if (!findTab(activeId)) activeId = tabs[tabs.length - 1].id;
 
@@ -453,6 +458,48 @@
 
     tabs = tabs.filter(function (t) { return t.id !== id; });
     syncTabs();
+  }
+
+  /* 页标签展开时，用这个面板再开一个服务 */
+  function buildPicker() {
+    var box = $('#tabPick');
+    var groups = {};
+    var order = [];
+
+    (state.links || []).forEach(function (l) {
+      var cat = l.cat || '未分类';
+      if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+      groups[cat].push(l);
+    });
+
+    if (!order.length) {
+      box.innerHTML = '<div class="pick-empty">还没有服务</div>';
+      return;
+    }
+
+    box.innerHTML = order.map(function (cat) {
+      var items = groups[cat].map(function (l) {
+        var url = pickUrl(l).url;
+        var raw = (l.icon || '').trim();
+        var ico = /^(\/|https?:\/\/)/i.test(raw)
+          ? '<img src="' + esc(raw) + '" alt="">'
+          : esc(raw || (l.name || '?').slice(0, 1));
+        return '<button class="pick-item" type="button" data-link="' + esc(l.id) + '"' +
+          (url ? '' : ' disabled') + '><i class="pick-ico">' + ico + '</i>' +
+          '<span>' + esc(l.name) + '</span></button>';
+      }).join('');
+      return '<div class="pick-cat">' + esc(cat) + '</div>' + items;
+    }).join('');
+  }
+
+  function showPicker() {
+    buildPicker();
+    $('#tabPick').hidden = false;
+  }
+
+  function hidePicker() {
+    var p = $('#tabPick');
+    if (p) p.hidden = true;
   }
 
   function activeTab() { return findTab(activeId); }
@@ -1113,6 +1160,9 @@
 
     $('#s-font').value = s.fontFamily || '';
     $('#s-open').value = s.openMode || (s.openInNewTab === false ? 'same' : 'new');
+    $('#s-glow').value = s.heroGlow === false ? '0' : '1';
+    formGlow = /^#[0-9a-fA-F]{6}$/.test(s.glowColor || '') ? s.glowColor : '';
+    $('#glowColor').value = formGlow || '#69e7c7';
     formInkLight = /^#[0-9a-fA-F]{6}$/.test(s.inkLight || '') ? s.inkLight : '';
     formInkDark = /^#[0-9a-fA-F]{6}$/.test(s.inkDark || '') ? s.inkDark : '';
     paintInk();
@@ -1371,6 +1421,8 @@
       probeUrls: $('#s-probe').value.split('\n').map(normalizeUrl).filter(Boolean),
       openMode: $('#s-open').value,
       fontFamily: $('#s-font').value,
+      heroGlow: $('#s-glow').value === '1',
+      glowColor: formGlow,
       inkLight: formInkLight,
       inkDark: formInkDark
     };
@@ -1526,7 +1578,25 @@
     var ink = dark ? st.inkDark : st.inkLight;
     if (/^#[0-9a-fA-F]{6}$/.test(ink || '')) root.style.setProperty('--ink', ink);
     else root.style.removeProperty('--ink');
+
+    /* 首屏光晕：关闭就整个去掉，改色按亮度派生亮/暗两层 */
+    var glowOn = st.heroGlow !== false;
+    root.setAttribute('data-glow', glowOn ? 'on' : 'off');
+
+    var gc = /^#[0-9a-fA-F]{6}$/.test(st.glowColor || '') ? st.glowColor : '';
+    if (!gc) {
+      root.style.removeProperty('--glow-soft');
+      root.style.removeProperty('--glow-deep');
+    } else {
+      var r = parseInt(gc.slice(1, 3), 16);
+      var g = parseInt(gc.slice(3, 5), 16);
+      var b = parseInt(gc.slice(5, 7), 16);
+      var dim = function (v) { return Math.round(v * 0.32); };
+      root.style.setProperty('--glow-soft', 'rgba(' + r + ',' + g + ',' + b + ',.20)');
+      root.style.setProperty('--glow-deep', 'rgba(' + dim(r) + ',' + dim(g) + ',' + dim(b) + ',.62)');
+    }
   }
+
 
   function applyThemeMode(mode, opts) {
     opts = opts || {};
@@ -1879,6 +1949,41 @@
         paintTabFail(id, false);
         if (f && t2) { f.src = 'about:blank'; setTimeout(function () { f.src = t2.url; }, 60); }
       }
+    });
+
+    $('#tabHome').addEventListener('click', function () {
+      tabsCollapsed = true;
+      hidePicker();
+      syncTabs();
+    });
+
+    $('#tabNew').addEventListener('click', function (e) {
+      e.stopPropagation();
+      if ($('#tabPick').hidden) showPicker();
+      else hidePicker();
+    });
+
+    $('#tabPick').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-link]');
+      if (!b) return;
+      var id = b.getAttribute('data-link');
+      var l = null;
+      (state.links || []).forEach(function (x) { if (x.id === id) l = x; });
+      if (l) openTab(l.name, pickUrl(l).url);
+    });
+
+    document.addEventListener('click', function (e) {
+      if ($('#tabPick') && !$('#tabPick').hidden &&
+          !e.target.closest('#tabPick') && !e.target.closest('#tabNew')) {
+        hidePicker();
+      }
+    });
+
+    $('#glowColor').addEventListener('input', function () { formGlow = this.value; });
+    $('#glowReset').addEventListener('click', function () {
+      formGlow = '';
+      $('#glowColor').value = '#69e7c7';
+      toast('保存后恢复默认光晕颜色');
     });
 
     $('#tabReload').addEventListener('click', reloadActiveTab);

@@ -285,6 +285,8 @@ const DEFAULT_SETTINGS = {
   heroImage: '',
   heroImageDark: '',
   heroFoot: '我们为你准备了丰富的内部服务',
+  heroGlow: true,           // 首屏壁纸上的光晕
+  glowColor: '',            // 空 = 默认青绿
   netMode: 'auto',
   probeUrls: [],
   openInNewTab: true,
@@ -1584,6 +1586,8 @@ const server = http.createServer(function (req, res) {
       if ('heroFoot' in body) s.heroFoot = cleanText(body.heroFoot, 40);
       if ('netMode' in body) s.netMode = ['auto', 'lan', 'wan'].indexOf(body.netMode) > -1 ? body.netMode : 'auto';
       if ('openInNewTab' in body) s.openInNewTab = Boolean(body.openInNewTab);
+      if ('heroGlow' in body) s.heroGlow = Boolean(body.heroGlow);
+      if ('glowColor' in body) s.glowColor = cleanHexColor(body.glowColor, '');
       if ('openMode' in body) {
         s.openMode = ['new', 'same', 'tab'].indexOf(body.openMode) > -1 ? body.openMode : 'new';
         s.openInNewTab = s.openMode !== 'same';
@@ -1774,6 +1778,8 @@ const server = http.createServer(function (req, res) {
           s.probeUrls = payload.settings.probeUrls.map(function (u) { return cleanUrl(u); }).filter(Boolean).slice(0, 5);
         }
         if (FONT_KEYS.indexOf(String(payload.settings.fontFamily || '')) > -1) s.fontFamily = String(payload.settings.fontFamily || '');
+        if (payload.settings.heroGlow !== undefined) s.heroGlow = payload.settings.heroGlow !== false;
+        if (payload.settings.glowColor) s.glowColor = cleanHexColor(payload.settings.glowColor, '');
         if (payload.settings.inkLight) s.inkLight = cleanHexColor(payload.settings.inkLight, '');
         if (payload.settings.inkDark) s.inkDark = cleanHexColor(payload.settings.inkDark, '');
         if (['new', 'same', 'tab'].indexOf(payload.settings.openMode) > -1) s.openMode = payload.settings.openMode;

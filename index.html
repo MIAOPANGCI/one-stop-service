@@ -363,7 +363,25 @@
             <input id="s-heroImageDark" type="text" placeholder="也可以直接粘贴图片地址">
           </div>
 
-          <small class="hint">建议 1920×1080，支持 JPG / PNG / WebP / GIF / BMP / AVIF / SVG，单张不超过 6MB。</small>
+          <div class="field">
+            <span>首屏光晕</span>
+            <select id="s-glow">
+              <option value="1">显示（左上亮斑 + 右下暗角）</option>
+              <option value="0">关闭</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <span>光晕颜色</span>
+            <div class="ink-row">
+              <label class="ink-item">
+                <input type="color" id="glowColor" value="#69e7c7">
+                <em>亮斑与暗角同色系</em>
+              </label>
+              <button class="btn-line sm" id="glowReset" type="button">恢复默认</button>
+            </div>
+            <small class="hint">只影响壁纸上的光斑，不动图片本身；建议 1920×1080，支持 JPG / PNG / WebP / GIF / BMP / AVIF / SVG，单张不超过 6MB。</small>
+          </div>
         </section>
 
         <section class="set-sec">
@@ -516,13 +534,16 @@
 
 <div class="tabhost" id="tabHost" hidden>
   <div class="tabbar">
+    <button class="tabtool tab-home" id="tabHome" type="button" title="回到门户（页标签保留）">门户</button>
     <div class="tablist" id="tabList"></div>
     <div class="tabtools">
+      <button class="tabtool tab-new" id="tabNew" type="button" title="再开一个服务">＋ 打开服务</button>
       <button class="tabtool" id="tabReload" type="button" title="刷新当前页">刷新</button>
       <button class="tabtool" id="tabPopup" type="button" title="在新标签页打开">新窗口</button>
       <button class="tabtool" id="tabCloseAll" type="button" title="关闭全部页标签">关闭全部</button>
     </div>
   </div>
+  <div class="tabpick" id="tabPick" hidden></div>
   <div class="tabframes" id="tabFrames"></div>
 </div>
 
