@@ -272,11 +272,23 @@ function createWindow() {
 
 function showMain() {
   if (win && !win.isDestroyed()) {
-    if (!win.isVisible()) win.show();
     if (win.isMinimized()) win.restore();
+    if (!win.isVisible()) win.show();
+    win.moveTop();
     win.focus();
+
+    // Windows 不允许后台进程随便抢前台，抢不到就闪任务栏，让用户点一下
+    setTimeout(() => {
+      if (win && !win.isDestroyed() && !win.isFocused()) {
+        try { win.flashFrame(true); } catch (e) {}
+        win.once('focus', () => { try { win.flashFrame(false); } catch (e) {} });
+        setTimeout(() => { try { if (win && !win.isDestroyed()) win.flashFrame(false); } catch (e) {} }, 6000);
+      }
+    }, 260);
+
     return;
   }
+
   boot();
 }
 
@@ -1125,28 +1137,60 @@ function pickAsset(rel) {
 }
 
 /* 便携版没有安装程序，得自己换自己：
-   Windows 允许改名正在运行的 exe，但不能覆盖，所以先把旧的挪开、再拷新的。 */
+   运行中的 exe 允许改名、但不允许覆盖，所以走「新文件先落地 → 旧的改名让位 → 新的顶上」，
+   全程都在同一个目录里，跨盘也不怕。 */
 function portableExe() {
   return process.env.PORTABLE_EXECUTABLE_FILE || '';
 }
 
+function sleepSync(ms) {
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+  catch (e) { const end = Date.now() + ms; while (Date.now() < end) {} }
+}
+
 function replacePortable(newFile) {
   const dest = portableExe();
-  if (!dest) return false;
+  if (!dest) return { ok: false, error: '当前不是便携版运行方式' };
 
+  const staged = dest + '.new';
   const old = dest + '.old';
-  try { fs.rmSync(old, { force: true }); } catch (e) {}
 
-  try { fs.renameSync(dest, old); }
-  catch (e) { return false; }
-
-  try { fs.copyFileSync(newFile, dest); }
-  catch (e) {
-    try { fs.renameSync(old, dest); } catch (e2) {}
-    return false;
+  // 1) 先把新版本拷到同一目录（同盘改名才快，也避免跨盘拷贝中途失败）
+  try {
+    fs.rmSync(staged, { force: true });
+    fs.copyFileSync(newFile, staged);
+  } catch (e) {
+    try { fs.rmSync(staged, { force: true }); } catch (e2) {}
+    return { ok: false, error: '写新版本失败（' + (e.code || e.message) + '），目录可能没有写权限' };
   }
 
-  return true;
+  try { fs.rmSync(old, { force: true }); } catch (e) {}
+
+  // 2) 旧的让位。杀软/搜索索引偶尔占着一两秒，重试几次
+  let renamed = false;
+  let lastErr = null;
+  for (let i = 0; i < 8; i++) {
+    try { fs.renameSync(dest, old); renamed = true; break; }
+    catch (e) { lastErr = e; sleepSync(350); }
+  }
+
+  if (!renamed) {
+    try { fs.rmSync(staged, { force: true }); } catch (e) {}
+    return { ok: false, error: '原文件被占用，改不了名（' + (lastErr && lastErr.code) + '）' };
+  }
+
+  // 3) 新的顶上；万一失败把旧的放回去
+  for (let i = 0; i < 4; i++) {
+    try { fs.renameSync(staged, dest); return { ok: true }; }
+    catch (e) {
+      lastErr = e;
+      sleepSync(250);
+    }
+  }
+
+  try { fs.renameSync(old, dest); } catch (e) {}
+  try { fs.rmSync(staged, { force: true }); } catch (e) {}
+  return { ok: false, error: '新文件放不回去（' + (lastErr && lastErr.code) + '）' };
 }
 
 /* 上次替换留下的 .old：那时它还在运行，删不掉，这次启动再收 */
@@ -1286,13 +1330,30 @@ function downloadAndInstall(rel) {
 
             if (go !== 0) { shell.showItemInFolder(target); return; }
 
-            if (!replacePortable(target)) {
+            const rep = replacePortable(target);
+
+            if (!rep.ok) {
+              // 换不掉也别让人无从下手：在 exe 旁边放一份能直接双击运行的
+              const dest = portableExe() || '';
+              let beside = '';
+              if (dest) {
+                beside = dest.replace(/\.exe$/i, '') + '-新版本.exe';
+                try { fs.copyFileSync(target, beside); } catch (e) { beside = ''; }
+              }
+
               msgBox({
                 type: 'error',
                 message: '替换失败',
-                detail: '可能没有写入权限。新版本已经下到这里，手动覆盖即可：\n' + target
+                detail: rep.error + '\n\n' +
+                  (beside
+                    ? '已经把新版本放在同一个文件夹里，名叫：\n' + path.basename(beside) +
+                      '\n直接双击它就能用新版本，确认没问题后把旧的删掉即可。'
+                    : '新版本在：' + target + '，手动覆盖即可。') +
+                  '\n\n目标位置：' + (dest || '（未识别）')
               });
-              shell.showItemInFolder(target);
+
+              if (beside) shell.showItemInFolder(beside);
+              else shell.showItemInFolder(target);
               return;
             }
 
@@ -1350,7 +1411,9 @@ function downloadAndInstall(rel) {
 /* ---------------- 生命周期 ---------------- */
 
 if (!app.requestSingleInstanceLock()) {
-  app.quit();
+  // 已经有实例在跑：通知已经发出去了，自己退干净。
+  // 用 exit 而不是 quit，跳过整个生命周期，任务栏不会闪。
+  setTimeout(() => app.exit(0), 50);
 } else {
   app.on('second-instance', () => showMain());
 
