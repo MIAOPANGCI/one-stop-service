@@ -228,10 +228,6 @@
   }
 
   function remove(role) {
-    if (!window.askConfirm) {
-      if (!confirm('删除角色「' + role.name + '」？')) return;
-      return doRemove(role);
-    }
     window.askConfirm({
       title: '删除这个角色？',
       text: '「' + role.name + '」删除后不可恢复；还有用户在用的话会先让你换角色。',

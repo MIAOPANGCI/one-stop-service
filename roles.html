@@ -105,6 +105,20 @@
   </div>
 </div>
 
+<!-- 通用确认弹窗（角色页也要用，「删除角色」不能落回系统原生弹窗） -->
+<div class="modal" id="confirmModal" hidden>
+  <div class="modal-mask" data-confirm-cancel></div>
+  <div class="modal-card confirm-card" role="dialog" aria-modal="true">
+    <div class="confirm-ico" id="confirmIco"></div>
+    <h3 id="confirmTitle">确认操作</h3>
+    <p id="confirmText"></p>
+    <div class="confirm-foot">
+      <button class="btn-line" id="confirmCancel" type="button">取消</button>
+      <button class="btn-primary" id="confirmOk" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 
 <script src="assets/ui.js"></script>

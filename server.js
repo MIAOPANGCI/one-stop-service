@@ -1921,6 +1921,32 @@ const server = http.createServer(function (req, res) {
     return;
   }
 
+  /* ---------- 批量删除服务 ---------- */
+  if (pathname === '/api/links/delete' && method === 'POST') {
+    if (!needCap('links')) return;
+    readJson(req).then(function (body) {
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      if (!ids.length) return deny(400, '先选中要删除的服务');
+
+      const before = db.links.length;
+      db.links = db.links.filter(function (l) { return ids.indexOf(l.id) < 0; });
+      const removed = before - db.links.length;
+
+      if (!removed) return deny(400, '没找到这些服务，可能已经被删了');
+
+      // 角色里指向这些服务的授权也清掉，免得留悬空引用
+      db.roles.forEach(function (r) {
+        if (r.id === 'admin' || r.seeAll !== false) return;
+        r.links = (r.links || []).filter(function (id) { return ids.indexOf(id) < 0; });
+      });
+
+      persist();
+      console.log('[服务] ' + user.username + ' 批量删除了 ' + removed + ' 条服务');
+      sendJson(res, 200, statePayload());
+    }).catch(function (e) { deny(400, e.message); });
+    return;
+  }
+
   /* ---------- 单条链接 ---------- */
   const lm = pathname.match(/^\/api\/links\/([A-Za-z0-9_-]+)$/);
   if (lm) {

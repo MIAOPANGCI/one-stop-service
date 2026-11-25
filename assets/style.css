@@ -941,6 +941,76 @@ html[data-glow="off"] .hero-bg::after { display: none; }
 }
 .field textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
 
+/* ==================== 批量删除 ==================== */
+.pick-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 10px 18px;
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 18px 46px -18px rgba(16, 24, 40, .5), 0 0 0 1px var(--line);
+}
+
+.pick-bar-n {
+  font-size: 13px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
+
+.pick-bar .btn-text,
+.pick-bar .btn-primary { height: 34px; }
+
+.pick-bar-gap { width: 6px; }
+
+.btn-primary.is-danger {
+  background: var(--danger);
+}
+
+body.managing .tile {
+  cursor: pointer;
+  outline: 1px dashed transparent;
+  outline-offset: 3px;
+}
+
+body.managing .tile:hover { outline-color: var(--line-2); }
+
+.tile-pick {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-2);
+  background: var(--card);
+  z-index: 2;
+  transition: background .15s, border-color .15s;
+}
+
+.tile-pick::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform .15s;
+}
+
+.tile.picked { outline: 1px solid var(--brand); }
+.tile.picked .tile-pick { background: var(--brand); border-color: var(--brand); }
+.tile.picked .tile-pick::after { transform: rotate(45deg) scale(1); }
+
 /* ==================== 角色编辑 ==================== */
 .cap-grid {
   display: flex;

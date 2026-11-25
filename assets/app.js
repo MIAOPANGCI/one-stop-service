@@ -911,15 +911,17 @@
     var pen = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
       '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"></path></svg>';
 
-    return '<div class="tile" role="link" tabindex="0" data-id="' + esc(l.id) + '" style="--c:' + esc(color) + '" title="' + esc(tip) + '"' +
+    return '<div class="tile' + (managing ? ' pickable' : '') + (pickedLinks[l.id] ? ' picked' : '') +
+      '" role="link" tabindex="0" data-id="' + esc(l.id) + '" style="--c:' + esc(color) + '" title="' + esc(tip) + '"' +
       (sorting ? ' draggable="true"' : '') + '>' +
+      (managing ? '<i class="tile-pick"></i>' : '') +
       '<span class="tile-ico' + (imgIcon ? ' has-img' : '') + '"' +
         (imgIcon ? '' : ' style="--ico-fs:' + iconFontSize(icon) + 'px"') + '>' +
         (imgIcon ? '<img src="' + esc(imgIcon) + '" alt="">' : esc(icon)) +
         (r.url ? '<i class="tile-dot ' + r.net + '"></i>' : '') +
       '</span>' +
       '<span class="tile-name">' + esc(l.name) + '</span>' +
-      (canManageLinks() && !sorting ? '<button class="tile-edit" type="button" data-act="edit" title="编辑">' + pen + '</button>' : '') +
+      (canManageLinks() && !sorting && !managing ? '<button class="tile-edit" type="button" data-act="edit" title="编辑">' + pen + '</button>' : '') +
     '</div>';
   }
 
@@ -1061,6 +1063,7 @@
 
     $('#addBtn').hidden = !canManageLinks();
     $('#sortBtn').hidden = !canManageLinks();
+    $('#manageBtn').hidden = !canManageLinks();
     $('#settingsBtn').hidden = !perms.settings;
   }
 
@@ -1075,6 +1078,60 @@
     btn.classList.toggle('on', on);
     $('#sortTip').hidden = !on;
     render();
+  }
+
+  /* ---------------- 批量删除 ---------------- */
+  var managing = false;
+  var pickedLinks = {};
+
+  function setManaging(on) {
+    managing = on;
+    if (!on) pickedLinks = {};
+    else setSorting(false);
+
+    document.body.classList.toggle('managing', on);
+    var btn = $('#manageBtn');
+    btn.textContent = on ? '退出批量' : '批量删除';
+    btn.classList.toggle('on', on);
+    $('#pickBar').hidden = !on;
+    syncPickBar();
+    render();
+  }
+
+  function pickedIds() {
+    return Object.keys(pickedLinks).filter(function (id) { return pickedLinks[id]; });
+  }
+
+  function syncPickBar() {
+    if (!managing) return;
+    $('#pickCount').textContent = '已选 ' + pickedIds().length + ' 个服务';
+    $('#pickDelBtn').disabled = !pickedIds().length;
+  }
+
+  function togglePick(id) {
+    pickedLinks[id] = !pickedLinks[id];
+    var el = document.querySelector('.tile[data-id="' + id + '"]');
+    if (el) el.classList.toggle('picked', !!pickedLinks[id]);
+    syncPickBar();
+  }
+
+  function deletePicked() {
+    var ids = pickedIds();
+    if (!ids.length) return;
+
+    askConfirm({
+      title: '删除选中的 ' + ids.length + ' 个服务？',
+      text: '删除后不可恢复，用户可以重新添加。角色里指向这些服务的授权也会一起清掉。',
+      okText: '删除',
+      danger: true
+    }).then(function (yes) {
+      if (!yes) return;
+      mutate('POST', '/api/links/delete', { ids: ids }, '已删除 ' + ids.length + ' 个服务').then(function (ok) {
+        if (!ok) return;
+        pickedLinks = {};
+        setManaging(false);
+      });
+    });
   }
 
   function moveLinkTo(fromId, toId) {
@@ -2275,6 +2332,12 @@
       if (!tile) return;
       var id = tile.dataset.id;
 
+      if (managing) {
+        e.preventDefault();
+        togglePick(id);
+        return;
+      }
+
       var act = e.target.closest('[data-act]');
       if (act) {
         e.stopPropagation();
@@ -2550,6 +2613,20 @@
     var dragCat = '';
 
     $('#sortBtn').addEventListener('click', function () { setSorting(!sorting); });
+
+    /* ---- 批量删除 ---- */
+    $('#manageBtn').addEventListener('click', function () { setManaging(!managing); });
+    $('#pickCancelBtn').addEventListener('click', function () { setManaging(false); });
+    $('#pickDelBtn').addEventListener('click', deletePicked);
+
+    $('#pickAllBtn').addEventListener('click', function () {
+      var all = filtered();
+      var every = all.every(function (l) { return pickedLinks[l.id]; });
+
+      all.forEach(function (l) { pickedLinks[l.id] = !every; });
+      render();
+      syncPickBar();
+    });
 
     $('#groups').addEventListener('dragstart', function (e) {
       if (!sorting) return;

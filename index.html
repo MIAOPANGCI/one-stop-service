@@ -49,6 +49,9 @@
     <button class="nav-btn nav-btn-ghost" id="sortBtn" type="button" hidden>
       <span class="nav-btn-txt">排序</span>
     </button>
+    <button class="nav-btn nav-btn-ghost" id="manageBtn" type="button" hidden>
+      <span class="nav-btn-txt">批量删除</span>
+    </button>
     <button class="nav-btn" id="addBtn" type="button">
       <span class="plus">＋</span><span class="nav-btn-txt">添加服务</span>
     </button>
@@ -653,6 +656,14 @@
   <div class="tabframes" id="tabFrames"></div>
 </div>
 
+
+<div class="pick-bar" id="pickBar" hidden>
+  <span class="pick-bar-n" id="pickCount">已选 0 个服务</span>
+  <button class="btn-text" id="pickAllBtn" type="button">全选本页</button>
+  <span class="pick-bar-gap"></span>
+  <button class="btn-text" id="pickCancelBtn" type="button">取消</button>
+  <button class="btn-primary is-danger" id="pickDelBtn" type="button">删除选中</button>
+</div>
 
 <div class="toast" id="toast" hidden></div>
 
