@@ -313,6 +313,8 @@ const DEFAULT_SETTINGS = {
   heroFoot: '我们为你准备了丰富的内部服务',
   heroGlow: true,           // 首屏壁纸上的光晕
   glowColor: '',            // 空 = 默认青绿
+  heroShadow: true,         // 首屏文字阴影（浅底白光晕、深底暗影）
+  heroShadowStrength: 45,   // 0-100
   netMode: 'auto',
   probeUrls: [],
   openInNewTab: true,
@@ -1679,6 +1681,11 @@ const server = http.createServer(function (req, res) {
       if ('netMode' in body) s.netMode = ['auto', 'lan', 'wan'].indexOf(body.netMode) > -1 ? body.netMode : 'auto';
       if ('openInNewTab' in body) s.openInNewTab = Boolean(body.openInNewTab);
       if ('heroGlow' in body) s.heroGlow = Boolean(body.heroGlow);
+      if ('heroShadow' in body) s.heroShadow = Boolean(body.heroShadow);
+      if ('heroShadowStrength' in body) {
+        const n = Number(body.heroShadowStrength);
+        s.heroShadowStrength = isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 45;
+      }
       if ('glowColor' in body) s.glowColor = cleanHexColor(body.glowColor, '');
       if ('tabPopups' in body) s.tabPopups = body.tabPopups === 'block' ? 'block' : 'allow';
       if ('openMode' in body) {
@@ -1872,6 +1879,11 @@ const server = http.createServer(function (req, res) {
         }
         if (FONT_KEYS.indexOf(String(payload.settings.fontFamily || '')) > -1) s.fontFamily = String(payload.settings.fontFamily || '');
         if (payload.settings.heroGlow !== undefined) s.heroGlow = payload.settings.heroGlow !== false;
+        if (payload.settings.heroShadow !== undefined) s.heroShadow = payload.settings.heroShadow !== false;
+        if (payload.settings.heroShadowStrength !== undefined) {
+          const n = Number(payload.settings.heroShadowStrength);
+          s.heroShadowStrength = isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 45;
+        }
         if (payload.settings.glowColor) s.glowColor = cleanHexColor(payload.settings.glowColor, '');
         if (payload.settings.inkLight) s.inkLight = cleanHexColor(payload.settings.inkLight, '');
         if (payload.settings.inkDark) s.inkDark = cleanHexColor(payload.settings.inkDark, '');

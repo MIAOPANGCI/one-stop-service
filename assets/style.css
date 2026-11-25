@@ -283,6 +283,50 @@ a { color: inherit; }
   place-items: center;
   overflow: hidden;
   background: #0d3b39;
+
+  /* 首屏文字色：默认给深色壁纸用的白系；壁纸偏亮时整组翻成深色（见下） */
+  --hero-ink: #fff;
+  --hero-ink-2: rgba(255, 255, 255, .84);
+  --hero-ink-3: rgba(255, 255, 255, .6);
+  --hero-line: rgba(255, 255, 255, .72);
+  --hero-fill: rgba(255, 255, 255, .13);
+  --hero-shadow: 0 2px 24px rgba(0, 0, 0, .45);
+}
+
+/* 壁纸亮的时候（js 采样平均亮度后打的标记）：文字反色，蒙层换成提亮 */
+html[data-hero-tone="light"] .hero {
+  --hero-ink: #14232e;
+  --hero-ink-2: rgba(20, 35, 46, .82);
+  --hero-ink-3: rgba(20, 35, 46, .58);
+  --hero-line: rgba(20, 35, 46, .48);
+  --hero-fill: rgba(255, 255, 255, .55);
+  --hero-shadow: 0 1px 10px rgba(255, 255, 255, .45);
+}
+
+html[data-hero-tone="light"] .hero-veil {
+  background: linear-gradient(180deg,
+    rgba(255, 255, 255, .5) 0%,
+    rgba(255, 255, 255, .22) 32%,
+    rgba(255, 255, 255, .26) 66%,
+    rgba(255, 255, 255, .5) 100%);
+}
+
+/* 管理员设了自定义文字色、且和壁纸明暗相反时，首屏也跟着用 */
+html[data-hero-ink-manual="1"] .hero {
+  --hero-ink: var(--ink);
+  --hero-ink-2: var(--ink-2);
+  --hero-ink-3: var(--ink-3);
+  --hero-line: color-mix(in srgb, var(--ink) 42%, transparent);
+  --hero-fill: color-mix(in srgb, var(--card) 45%, transparent);
+}
+
+/* 顶栏默认是「深色壁纸上的白字」，浅色壁纸下要反过来，否则整条看不清 */
+html[data-hero-tone="light"] .nav:not(.scrolled) {
+  --nav-fg: #14232e;
+  --nav-fg-dim: rgba(20, 35, 46, .72);
+  --nav-line: rgba(20, 35, 46, .16);
+  --nav-search-bg: rgba(255, 255, 255, .62);
+  --nav-hover: rgba(20, 35, 46, .08);
 }
 
 .hero-bg {
@@ -332,9 +376,9 @@ html[data-glow="off"] .hero-bg::after { display: none; }
   font-weight: 500;
   letter-spacing: .3em;
   text-indent: .3em;
-  color: #fff;
+  color: var(--hero-ink);
   line-height: 1.4;
-  text-shadow: 0 2px 24px rgba(0, 0, 0, .45);
+  text-shadow: var(--hero-shadow);
 }
 
 .hero-en {
@@ -342,7 +386,7 @@ html[data-glow="off"] .hero-bg::after { display: none; }
   font-size: clamp(10px, 1vw, 13px);
   letter-spacing: .52em;
   text-indent: .52em;
-  color: rgba(255, 255, 255, .82);
+  color: var(--hero-ink-2);
   text-transform: uppercase;
 }
 
@@ -350,7 +394,7 @@ html[data-glow="off"] .hero-bg::after { display: none; }
   margin: 20px 0 0;
   font-size: clamp(13px, 1.2vw, 15px);
   letter-spacing: .12em;
-  color: rgba(255, 255, 255, .88);
+  color: var(--hero-ink-2);
 }
 
 .hero-btn {
@@ -359,11 +403,11 @@ html[data-glow="off"] .hero-bg::after { display: none; }
   gap: 9px;
   margin-top: 36px;
   padding: 13px 44px;
-  border: 1px solid rgba(255, 255, 255, .72);
+  border: 1px solid var(--hero-line);
   border-radius: 3px;
-  background: rgba(255, 255, 255, .13);
+  background: var(--hero-fill);
   backdrop-filter: blur(5px);
-  color: #fff;
+  color: var(--hero-ink);
   font-size: 15px;
   letter-spacing: .16em;
   text-indent: .16em;
@@ -394,7 +438,7 @@ html[data-glow="off"] .hero-bg::after { display: none; }
   flex-direction: column;
   align-items: center;
   gap: 14px;
-  color: rgba(255, 255, 255, .82);
+  color: var(--hero-ink-2);
   font-size: 12.5px;
   letter-spacing: .1em;
   text-decoration: none;
@@ -2636,6 +2680,44 @@ html[data-theme="dark"] .probe-res.warn { color: #ff9ba2; }
   gap: 7px;
   font-size: 12.5px;
   color: var(--ink-3);
+}
+
+.shadow-mode { min-width: 260px; }
+
+.shadow-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shadow-slider input[type="range"] {
+  width: 150px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--line-2);
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
+}
+
+.shadow-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--brand);
+  border: 2px solid var(--card);
+  box-shadow: 0 1px 4px rgba(16, 24, 40, .28);
+  cursor: pointer;
+}
+
+.shadow-slider em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--ink-3);
+  min-width: 22px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .ink-item input[type="color"] {

@@ -53,7 +53,8 @@
       logo: '企', brandColor: '#2fa795', heroImage: '', heroFoot: '我们为你准备了丰富的内部服务',
       netMode: 'auto', probeUrls: [], openInNewTab: true, openMode: 'new',
       fontFamily: '', inkLight: '', inkDark: '',
-      heroGlow: true, glowColor: '', tabPopups: 'allow', updatedAt: null
+      heroGlow: true, glowColor: '', tabPopups: 'allow',
+      heroShadow: true, heroShadowStrength: 45, updatedAt: null
     },
     links: [],
     version: '',
@@ -745,6 +746,59 @@
     } else {
       bg.style.backgroundImage = '';
     }
+
+    sampleHeroTone(img);
+  }
+
+  /* 采样壁纸平均亮度：偏亮就把首屏文字翻成深色，别让白字糊在浅色背景上 */
+  var heroToneToken = 0;
+
+  function sampleHeroTone(src) {
+    var root = document.documentElement;
+    var token = ++heroToneToken;
+
+    if (!src) {
+      root.setAttribute('data-hero-tone', 'dark');
+      syncHeroInk();
+      return;
+    }
+
+    var img = new Image();
+
+    img.onload = function () {
+      if (token !== heroToneToken) return;
+      try {
+        var c = document.createElement('canvas');
+        c.width = 24;
+        c.height = 24;
+        var ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, 24, 24);
+
+        var d = ctx.getImageData(0, 0, 24, 24).data;
+        var sum = 0;
+        var n = 0;
+
+        for (var i = 0; i < d.length; i += 4) {
+          if (d[i + 3] < 8) continue;
+          sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+          n++;
+        }
+
+        var lum = n ? sum / n / 255 : 0;
+        root.setAttribute('data-hero-tone', lum > 0.6 ? 'light' : 'dark');
+      } catch (e) {
+        root.setAttribute('data-hero-tone', 'dark');
+      }
+      syncHeroInk();
+    };
+
+    img.onerror = function () {
+      if (token !== heroToneToken) return;
+      root.setAttribute('data-hero-tone', 'dark');
+      syncHeroInk();
+    };
+
+    img.src = src;
   }
 
   /* ---------------- 渲染：分类与图标墙 ---------------- */
@@ -1338,6 +1392,10 @@
     $('#s-glow').value = s.heroGlow === false ? '0' : '1';
     formGlow = /^#[0-9a-fA-F]{6}$/.test(s.glowColor || '') ? s.glowColor : '';
     $('#glowColor').value = formGlow || '#69e7c7';
+
+    $('#s-heroShadow').value = s.heroShadow === false ? 'off' : 'auto';
+    $('#s-heroShadowStrength').value = String(shadowStrength(s));
+    $('#heroShadowVal').textContent = String(shadowStrength(s));
     formInkLight = /^#[0-9a-fA-F]{6}$/.test(s.inkLight || '') ? s.inkLight : '';
     formInkDark = /^#[0-9a-fA-F]{6}$/.test(s.inkDark || '') ? s.inkDark : '';
     paintInk();
@@ -1629,6 +1687,8 @@
       fontFamily: $('#s-font').value,
       heroGlow: $('#s-glow').value === '1',
       glowColor: formGlow,
+      heroShadow: $('#s-heroShadow').value !== 'off',
+      heroShadowStrength: Number($('#s-heroShadowStrength').value) || 0,
       inkLight: formInkLight,
       inkDark: formInkDark
     };
@@ -1915,6 +1975,77 @@
     segoe: '"Segoe UI", "Microsoft YaHei", system-ui, sans-serif'
   };
 
+  /* 相对亮度：判断自定义文字色和壁纸够不够对比 */
+  function luminance(hex) {
+    var ch = function (v) {
+      v = v / 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * ch(parseInt(hex.slice(1, 3), 16)) +
+      0.7152 * ch(parseInt(hex.slice(3, 5), 16)) +
+      0.0722 * ch(parseInt(hex.slice(5, 7), 16));
+  }
+
+  function shadowStrength(st) {
+    var n = Number(st.heroShadowStrength);
+    if (!isFinite(n)) return 45;
+    return Math.max(0, Math.min(100, Math.round(n)));
+  }
+
+  /* 首屏文字阴影：跟着壁纸明暗决定白晕还是暗影，强度由设置控制 */
+  function applyHeroShadow() {
+    var root = document.documentElement;
+    var st = state.settings;
+
+    if (st.heroShadow === false) {
+      root.style.setProperty('--hero-shadow', 'none');
+      return;
+    }
+
+    var k = shadowStrength(st);
+    if (!k) {
+      root.style.setProperty('--hero-shadow', 'none');
+      return;
+    }
+
+    var blur = Math.round(4 + k * 0.22);
+    var alpha = (0.14 + k * 0.005).toFixed(2);
+    var tone = root.getAttribute('data-hero-tone') || 'dark';
+    var color = tone === 'light'
+      ? 'rgba(255,255,255,' + alpha + ')'
+      : 'rgba(0,0,0,' + alpha + ')';
+
+    root.style.setProperty('--hero-shadow', '0 2px ' + blur + 'px ' + color);
+  }
+
+  /* 自定义文字色只有在和壁纸明暗相反时才用到首屏上，避免又设回「白字压白底」 */
+  function syncHeroInk() {
+    var root = document.documentElement;
+    var st = state.settings;
+    var dark = root.getAttribute('data-theme') === 'dark';
+    var ink = dark ? st.inkDark : st.inkLight;
+    var tone = root.getAttribute('data-hero-tone') || 'dark';
+    var use = false;
+
+    if (/^#[0-9a-fA-F]{6}$/.test(ink || '')) {
+      var l = luminance(ink);
+      use = (tone === 'light' && l < 0.45) || (tone === 'dark' && l > 0.5);
+    }
+
+    if (use) root.setAttribute('data-hero-ink-manual', '1');
+    else root.removeAttribute('data-hero-ink-manual');
+
+    applyHeroShadow();
+  }
+
+  /* #rrggbb + 透明度 → rgba()，用来从主文字色派生次要色 */
+  function tint(hex, a) {
+    var r = parseInt(hex.slice(1, 3), 16);
+    var g = parseInt(hex.slice(3, 5), 16);
+    var b = parseInt(hex.slice(5, 7), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+  }
+
   /* 字体与文字颜色：留空就跟主题走，不写死 */
   function applyType() {
     var root = document.documentElement;
@@ -1924,8 +2055,19 @@
 
     var dark = root.getAttribute('data-theme') === 'dark';
     var ink = dark ? st.inkDark : st.inkLight;
-    if (/^#[0-9a-fA-F]{6}$/.test(ink || '')) root.style.setProperty('--ink', ink);
-    else root.style.removeProperty('--ink');
+
+    if (/^#[0-9a-fA-F]{6}$/.test(ink || '')) {
+      // 次要文字也从这个色派生，不然设了主色之后灰字还是原来那档，看着很脏
+      root.style.setProperty('--ink', ink);
+      root.style.setProperty('--ink-2', tint(ink, 0.68));
+      root.style.setProperty('--ink-3', tint(ink, 0.5));
+    } else {
+      root.style.removeProperty('--ink');
+      root.style.removeProperty('--ink-2');
+      root.style.removeProperty('--ink-3');
+    }
+
+    syncHeroInk();
 
     /* 首屏光晕：关闭就整个去掉，改色按亮度派生亮/暗两层 */
     var glowOn = st.heroGlow !== false;
@@ -2272,6 +2414,18 @@
 
     $('#inkLight').addEventListener('input', function () { formInkLight = this.value; paintInk(); });
     $('#inkDark').addEventListener('input', function () { formInkDark = this.value; paintInk(); });
+
+    // 阴影改了立刻能看到效果，不用等保存
+    $('#s-heroShadow').addEventListener('change', function () {
+      state.settings.heroShadow = this.value !== 'off';
+      applyHeroShadow();
+    });
+
+    $('#s-heroShadowStrength').addEventListener('input', function () {
+      $('#heroShadowVal').textContent = this.value;
+      state.settings.heroShadowStrength = Number(this.value) || 0;
+      applyHeroShadow();
+    });
     $('#inkReset').addEventListener('click', function () {
       formInkLight = '';
       formInkDark = '';

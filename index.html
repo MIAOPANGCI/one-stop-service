@@ -411,7 +411,22 @@
                                       </label>
                                       <button class="btn-line sm" id="inkReset" type="button">已是跟随主题</button>
                                     </div>
-                                    <small class="hint">留空即跟随深浅主题；改过之后按选定颜色显示，注意和壁纸的对比度。</small>
+                                    <small class="hint">留空即跟随深浅主题。选定后主文字、次要文字（搜索框提示、计数、页脚这类）都按它派生，不会再一半黑一半灰；首屏标题按壁纸明暗自动反色，浅色壁纸上会用深色字。</small>
+                                  </div>
+
+                                  <div class="field">
+                                    <span>首屏文字阴影</span>
+                                    <div class="ink-row">
+                                      <select id="s-heroShadow" class="shadow-mode">
+                                        <option value="auto">跟随壁纸（浅底白光晕 / 深底暗影）</option>
+                                        <option value="off">关闭</option>
+                                      </select>
+                                      <div class="shadow-slider">
+                                        <input type="range" id="s-heroShadowStrength" min="0" max="100" step="5" value="45">
+                                        <em id="heroShadowVal">45</em>
+                                      </div>
+                                    </div>
+                                    <small class="hint">壁纸和字色接近时留一点阴影，字能立住；嫌糊就关掉或调小。</small>
                                   </div>
                                 </section>
       </div>
