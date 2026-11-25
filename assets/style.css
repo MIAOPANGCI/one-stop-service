@@ -937,6 +937,38 @@ html[data-glow="off"] .hero-bg::after { display: none; }
 }
 .field textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
 
+/* ==================== 排序模式 ==================== */
+.nav-btn-ghost {
+  background: var(--field);
+  color: var(--ink-2);
+  box-shadow: none;
+}
+.nav-btn-ghost:hover { color: var(--ink); }
+.nav-btn-ghost.on {
+  background: var(--brand);
+  color: #fff;
+}
+
+.sort-tip {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px dashed color-mix(in srgb, var(--brand) 55%, transparent);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+
+body.sorting .tile { cursor: grab; }
+body.sorting .tile:hover { transform: none; }
+body.sorting .tile.dragging { opacity: .35; }
+body.sorting .group-head { cursor: grab; }
+body.sorting .group-head h3::after {
+  content: " ⠿";
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
 /* 单选 / 复选（关闭行为这类） */
 .radio-row {
   display: flex;

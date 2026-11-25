@@ -667,6 +667,8 @@
       return;
     }
 
+    order = sortCatNames(order);
+
     box.innerHTML = order.map(function (cat) {
       var items = groups[cat].map(function (l) {
         var url = pickUrl(l).url;
@@ -802,6 +804,22 @@
   }
 
   /* ---------------- 渲染：分类与图标墙 ---------------- */
+  /* 分类顺序：settings.catOrder 里列过的按它排，没列过的按出现顺序排后面 */
+  function catRank() {
+    var rank = {};
+    ((state.settings && state.settings.catOrder) || []).forEach(function (n, i) { rank[n] = i; });
+    return rank;
+  }
+
+  function sortCatNames(names) {
+    var rank = catRank();
+    return names.slice().sort(function (a, b) {
+      var ra = rank[a] === undefined ? 1e6 : rank[a];
+      var rb = rank[b] === undefined ? 1e6 : rank[b];
+      return ra - rb;
+    });
+  }
+
   function categories() {
     var seen = {}, out = [];
     state.links.forEach(function (l) {
@@ -809,7 +827,7 @@
       if (!seen[c]) { seen[c] = 0; out.push(c); }
       seen[c]++;
     });
-    return { list: out, count: seen };
+    return { list: sortCatNames(out), count: seen };
   }
 
   function renderCats() {
@@ -886,14 +904,15 @@
     var pen = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
       '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"></path></svg>';
 
-    return '<div class="tile" role="link" tabindex="0" data-id="' + esc(l.id) + '" style="--c:' + esc(color) + '" title="' + esc(tip) + '">' +
+    return '<div class="tile" role="link" tabindex="0" data-id="' + esc(l.id) + '" style="--c:' + esc(color) + '" title="' + esc(tip) + '"' +
+      (sorting ? ' draggable="true"' : '') + '>' +
       '<span class="tile-ico' + (imgIcon ? ' has-img' : '') + '"' +
         (imgIcon ? '' : ' style="--ico-fs:' + iconFontSize(icon) + 'px"') + '>' +
         (imgIcon ? '<img src="' + esc(imgIcon) + '" alt="">' : esc(icon)) +
         (r.url ? '<i class="tile-dot ' + r.net + '"></i>' : '') +
       '</span>' +
       '<span class="tile-name">' + esc(l.name) + '</span>' +
-      (canEdit() ? '<button class="tile-edit" type="button" data-act="edit" title="编辑">' + pen + '</button>' : '') +
+      (canEdit() && !sorting ? '<button class="tile-edit" type="button" data-act="edit" title="编辑">' + pen + '</button>' : '') +
     '</div>';
   }
 
@@ -931,7 +950,8 @@
     box.innerHTML = order.map(function (cat) {
       var arr = map[cat];
       return '<section class="group">' +
-        '<div class="group-head"><h3>' + esc(cat) + '</h3><span class="group-n">' + arr.length + ' 项</span></div>' +
+        '<div class="group-head" data-cat="' + esc(cat) + '"' + (sorting ? ' draggable="true"' : '') + '>' +
+          '<h3>' + esc(cat) + '</h3><span class="group-n">' + arr.length + ' 项</span></div>' +
         '<div class="tiles">' + arr.map(tileHtml).join('') + '</div>' +
       '</section>';
     }).join('');
@@ -1033,6 +1053,62 @@
     var ed = canEdit();
     $('#addBtn').hidden = !ed;
     $('#settingsBtn').hidden = !ed;
+    $('#sortBtn').hidden = !ed;
+  }
+
+  /* ---------------- 排序（拖动） ---------------- */
+  var sorting = false;
+
+  function setSorting(on) {
+    sorting = on;
+    document.body.classList.toggle('sorting', on);
+    var btn = $('#sortBtn');
+    btn.textContent = on ? '完成排序' : '排序';
+    btn.classList.toggle('on', on);
+    $('#sortTip').hidden = !on;
+    render();
+  }
+
+  function moveLinkTo(fromId, toId) {
+    if (!fromId || !toId || fromId === toId) return;
+
+    var a = null;
+    var b = null;
+    state.links.forEach(function (l) {
+      if (l.id === fromId) a = l;
+      if (l.id === toId) b = l;
+    });
+    if (!a || !b) return;
+    if ((a.cat || '未分类') !== (b.cat || '未分类')) {
+      toast('不能跨分类拖动，想换分类请在编辑里改');
+      return;
+    }
+
+    var ids = state.links.map(function (l) { return l.id; });
+    var from = ids.indexOf(fromId);
+    var to = ids.indexOf(toId);
+    if (from < 0 || to < 0) return;
+
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+
+    mutate('POST', '/api/links/order', { ids: ids }, '顺序已保存').then(function (ok) {
+      if (ok) render();
+    });
+  }
+
+  function moveCatTo(fromCat, toCat) {
+    if (!fromCat || !toCat || fromCat === toCat) return;
+
+    var names = categories().list.slice();
+    var from = names.indexOf(fromCat);
+    var to = names.indexOf(toCat);
+    if (from < 0 || to < 0) return;
+
+    names.splice(to, 0, names.splice(from, 1)[0]);
+
+    mutate('PUT', '/api/settings', { catOrder: names }, '分类顺序已保存').then(function (ok) {
+      if (ok) render();
+    });
   }
 
   function render() {
@@ -2459,6 +2535,59 @@
       list.scrollLeft += e.deltaY;
       e.preventDefault();
     }, { passive: false });
+
+    /* ---- 拖动排序 ---- */
+    var dragId = '';
+    var dragCat = '';
+
+    $('#sortBtn').addEventListener('click', function () { setSorting(!sorting); });
+
+    $('#groups').addEventListener('dragstart', function (e) {
+      if (!sorting) return;
+
+      var head = e.target.closest('.group-head');
+      if (head) {
+        dragCat = head.dataset.cat || '';
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        return;
+      }
+
+      var tile = e.target.closest('.tile');
+      if (tile) {
+        dragId = tile.dataset.id;
+        tile.classList.add('dragging');
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      }
+    });
+
+    $('#groups').addEventListener('dragend', function (e) {
+      var t = e.target.closest('.tile');
+      if (t) t.classList.remove('dragging');
+      dragId = '';
+      dragCat = '';
+    });
+
+    $('#groups').addEventListener('dragover', function (e) {
+      if (!sorting) return;
+      if (dragCat && e.target.closest('.group-head')) { e.preventDefault(); return; }
+      if (dragId && e.target.closest('.tile')) e.preventDefault();
+    });
+
+    $('#groups').addEventListener('drop', function (e) {
+      if (!sorting) return;
+      e.preventDefault();
+
+      if (dragCat) {
+        var head = e.target.closest('.group-head');
+        if (head) moveCatTo(dragCat, head.dataset.cat);
+        dragCat = '';
+        return;
+      }
+
+      var tile = e.target.closest('.tile');
+      if (tile && dragId) moveLinkTo(dragId, tile.dataset.id);
+      dragId = '';
+    });
 
     $('#tabFrames').addEventListener('click', function (e) {
       var pop = e.target.closest('[data-pop]');

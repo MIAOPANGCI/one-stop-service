@@ -313,6 +313,7 @@ const DEFAULT_SETTINGS = {
   heroFoot: '我们为你准备了丰富的内部服务',
   heroGlow: true,           // 首屏壁纸上的光晕
   glowColor: '',            // 空 = 默认青绿
+  catOrder: [],             // 分类的显示顺序（名字数组，没列到的按出现顺序排在后面）
   heroShadow: true,         // 首屏文字阴影（浅底白光晕、深底暗影）
   heroShadowStrength: 45,   // 0-100
   netMode: 'auto',
@@ -828,6 +829,47 @@ function readBody(req, limit) {
   });
 }
 
+/* 浏览器能下、服务端却超时：多半是浏览器走了系统代理，node 直连出不去。
+   这里按 环境变量 > config.json > Windows 系统代理 的顺序找代理。 */
+let sysProxyCache;
+
+function systemProxy() {
+  if (sysProxyCache !== undefined) return sysProxyCache;
+  sysProxyCache = '';
+
+  if (process.platform !== 'win32') return sysProxyCache;
+
+  try {
+    const raw = require('child_process').execFileSync('reg', [
+      'query',
+      'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
+    ], { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+
+    if (!/ProxyEnable\s+REG_DWORD\s+0x1\b/i.test(raw)) return sysProxyCache;
+
+    const m = raw.match(/ProxyServer\s+REG_SZ\s+(.+)/i);
+    if (!m) return sysProxyCache;
+
+    let v = m[1].trim();
+
+    // 可能是 "host:port"，也可能是 "http=host:port;https=host:port"
+    if (v.indexOf('=') > -1) {
+      const parts = v.split(';').map(function (s) { return s.trim(); });
+      const https = parts.filter(function (s) { return /^https=/i.test(s); })[0];
+      const http = parts.filter(function (s) { return /^http=/i.test(s); })[0];
+      v = (https || http || '').split('=')[1] || '';
+    }
+
+    v = v.trim();
+    if (!v) return sysProxyCache;
+    if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
+
+    sysProxyCache = v;
+  } catch (e) {}
+
+  return sysProxyCache;
+}
+
 /* 下载安装包：支持 UPDATE_PROXY 走代理，内网机器直连不通时用得上 */
 function httpsBinary(url, timeoutMs) {
   return new Promise(function (resolve, reject) {
@@ -848,19 +890,25 @@ function httpsBinary(url, timeoutMs) {
       res.on('end', function () { resolve(Buffer.concat(chunks)); });
     };
 
-    // 代理优先级：环境变量 > config.json 里的 updateProxy
-    const proxy = process.env.UPDATE_PROXY || (CFG && CFG.updateProxy) || '';
+    // 代理优先级：环境变量 > config.json > 系统代理
+    const proxy = process.env.UPDATE_PROXY || (CFG && CFG.updateProxy) || systemProxy();
 
     if (proxy) {
       let pu;
       try { pu = new URL(proxy); } catch (e) { return reject(new Error('代理地址格式不对：' + proxy)); }
+
+      const connHeaders = { Host: u.hostname + ':443' };
+      if (pu.username) {
+        connHeaders['Proxy-Authorization'] = 'Basic ' +
+          Buffer.from(decodeURIComponent(pu.username) + ':' + decodeURIComponent(pu.password || '')).toString('base64');
+      }
 
       const conn = http.request({
         host: pu.hostname,
         port: pu.port || 80,
         method: 'CONNECT',
         path: u.hostname + ':443',
-        headers: { Host: u.hostname + ':443' }
+        headers: connHeaders
       });
 
       conn.on('connect', function (res, socket) {
@@ -876,7 +924,10 @@ function httpsBinary(url, timeoutMs) {
           socket: socket,
           servername: u.hostname
         }, onRes);
-        r.setTimeout(timeoutMs, function () { r.destroy(); reject(new Error('下载超时')); });
+        r.setTimeout(timeoutMs, function () {
+          r.destroy();
+          reject(new Error('下载超时（' + Math.round(timeoutMs / 1000) + ' 秒没下完）。若要走代理，在 config.json 里加 "updateProxy"，或启动前设 UPDATE_PROXY'));
+        });
         r.on('error', reject);
         r.end();
       });
@@ -905,7 +956,7 @@ async function applyUpdate(assetUrl, latest) {
     fs.rmSync(UPDATE_DIR, { recursive: true, force: true });
     fs.mkdirSync(UPDATE_DIR, { recursive: true });
 
-    const zip = await httpsBinary(assetUrl, 120 * 1000);
+    const zip = await httpsBinary(assetUrl, 300 * 1000);
     if (zip.length < 1024) throw new Error('安装包异常（体积过小）');
 
     const stage = path.join(UPDATE_DIR, 'stage');
@@ -1687,6 +1738,12 @@ const server = http.createServer(function (req, res) {
       if ('netMode' in body) s.netMode = ['auto', 'lan', 'wan'].indexOf(body.netMode) > -1 ? body.netMode : 'auto';
       if ('openInNewTab' in body) s.openInNewTab = Boolean(body.openInNewTab);
       if ('heroGlow' in body) s.heroGlow = Boolean(body.heroGlow);
+      if ('catOrder' in body) {
+        s.catOrder = (Array.isArray(body.catOrder) ? body.catOrder : [])
+          .map(function (x) { return String(x || '').trim().slice(0, 12); })
+          .filter(Boolean)
+          .slice(0, 60);
+      }
       if ('heroShadow' in body) s.heroShadow = Boolean(body.heroShadow);
       if ('heroShadowStrength' in body) {
         const n = Number(body.heroShadowStrength);
@@ -1885,6 +1942,12 @@ const server = http.createServer(function (req, res) {
         }
         if (FONT_KEYS.indexOf(String(payload.settings.fontFamily || '')) > -1) s.fontFamily = String(payload.settings.fontFamily || '');
         if (payload.settings.heroGlow !== undefined) s.heroGlow = payload.settings.heroGlow !== false;
+        if (Array.isArray(payload.settings.catOrder)) {
+          s.catOrder = payload.settings.catOrder
+            .map(function (x) { return String(x || '').trim().slice(0, 12); })
+            .filter(Boolean)
+            .slice(0, 60);
+        }
         if (payload.settings.heroShadow !== undefined) s.heroShadow = payload.settings.heroShadow !== false;
         if (payload.settings.heroShadowStrength !== undefined) {
           const n = Number(payload.settings.heroShadowStrength);

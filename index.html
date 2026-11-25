@@ -46,6 +46,9 @@
     <button class="net-pill" id="netPill" type="button">
       <span class="dot"></span><span class="txt">检测中</span>
     </button>
+    <button class="nav-btn nav-btn-ghost" id="sortBtn" type="button" hidden>
+      <span class="nav-btn-txt">排序</span>
+    </button>
     <button class="nav-btn" id="addBtn" type="button">
       <span class="plus">＋</span><span class="nav-btn-txt">添加服务</span>
     </button>
@@ -111,7 +114,11 @@
       <span class="svc-count" id="svcCount"></span>
     </div>
 
-    <div id="groups"></div>
+    <div class="sort-tip" id="sortTip" hidden>
+    拖动卡片调整服务顺序，拖动分类名调整分类顺序；完成后点右上角「完成排序」。
+  </div>
+
+  <div id="groups"></div>
 
     <div class="locked" id="locked" hidden>
       <div class="locked-glow" aria-hidden="true"></div>
