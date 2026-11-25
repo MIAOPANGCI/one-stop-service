@@ -290,7 +290,8 @@ a { color: inherit; }
   --hero-ink-3: rgba(255, 255, 255, .6);
   --hero-line: rgba(255, 255, 255, .72);
   --hero-fill: rgba(255, 255, 255, .13);
-  --hero-shadow: 0 2px 24px rgba(0, 0, 0, .45);
+  /* 只是默认值：js 会在 :root 上写 --hero-shadow 覆盖它（关掉时写 none） */
+  --hero-shadow-auto: 0 2px 24px rgba(0, 0, 0, .45);
 }
 
 /* 壁纸亮的时候（js 采样平均亮度后打的标记）：文字反色，蒙层换成提亮 */
@@ -300,7 +301,7 @@ html[data-hero-tone="light"] .hero {
   --hero-ink-3: rgba(20, 35, 46, .58);
   --hero-line: rgba(20, 35, 46, .48);
   --hero-fill: rgba(255, 255, 255, .55);
-  --hero-shadow: 0 1px 10px rgba(255, 255, 255, .45);
+  --hero-shadow-auto: 0 1px 10px rgba(255, 255, 255, .45);
 }
 
 html[data-hero-tone="light"] .hero-veil {
@@ -378,7 +379,7 @@ html[data-glow="off"] .hero-bg::after { display: none; }
   text-indent: .3em;
   color: var(--hero-ink);
   line-height: 1.4;
-  text-shadow: var(--hero-shadow);
+  text-shadow: var(--hero-shadow, var(--hero-shadow-auto));
 }
 
 .hero-en {
@@ -1909,28 +1910,28 @@ html[data-theme="light"] .auth-veil {
 /* ===========================================================
    壁纸可换后，保证白字在任何背景上都可读
    =========================================================== */
-/* 文字区域径向压暗（浅色壁纸尤其需要） */
+/* 文字区域压暗：只有深色壁纸需要；浅色壁纸由上面的白色蒙层提亮，这里直接关掉 */
 .hero-veil::after {
   content: "";
   position: absolute;
   inset: 0;
   background: radial-gradient(ellipse 68% 50% at 50% 44%,
-    rgba(3, 15, 17, .44),
-    rgba(3, 15, 17, .10) 58%,
+    rgba(3, 15, 17, .4),
+    rgba(3, 15, 17, .08) 58%,
     rgba(3, 15, 17, 0) 76%);
   pointer-events: none;
 }
 
-.hero-inner h1 {
-  text-shadow: 0 2px 30px rgba(0, 0, 0, .55), 0 1px 2px rgba(0, 0, 0, .35);
-}
+html[data-hero-tone="light"] .hero-veil::after { display: none; }
+
+/* 副标题这类小字的阴影，强度由设置里的滑杆一起控制（比标题轻） */
 .hero-en,
 .hero-slogan,
 .hero-foot {
-  text-shadow: 0 1px 10px rgba(0, 0, 0, .5);
+  text-shadow: var(--hero-shadow-soft, none);
 }
 
-/* 顶栏未滚动时压一层顶部渐变，避免浅色壁纸下导航看不清 */
+/* 顶栏未滚动时压一层顶部渐变；浅色壁纸下用深色字，不需要这层 */
 .nav::before {
   content: "";
   position: absolute;
@@ -1942,12 +1943,7 @@ html[data-theme="light"] .auth-veil {
   transition: opacity .3s var(--ease);
 }
 .nav.scrolled::before { opacity: 0; }
-
-/* 首屏按钮在浅色壁纸下也需要一点托底 */
-.hero-btn {
-  background: rgba(255, 255, 255, .16);
-  text-shadow: 0 1px 8px rgba(0, 0, 0, .35);
-}
+html[data-hero-tone="light"] .nav::before { display: none; }
 
 /* 保持登录 */
 .auth-remember {

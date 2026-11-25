@@ -1997,25 +1997,25 @@
     var root = document.documentElement;
     var st = state.settings;
 
-    if (st.heroShadow === false) {
+    var k = st.heroShadow === false ? 0 : shadowStrength(st);
+
+    if (!k) {
       root.style.setProperty('--hero-shadow', 'none');
+      root.style.setProperty('--hero-shadow-soft', 'none');
       return;
     }
 
-    var k = shadowStrength(st);
-    if (!k) {
-      root.style.setProperty('--hero-shadow', 'none');
-      return;
-    }
+    var tone = root.getAttribute('data-hero-tone') || 'dark';
+    var rgb = tone === 'light' ? '255,255,255' : '0,0,0';
 
     var blur = Math.round(4 + k * 0.22);
     var alpha = (0.14 + k * 0.005).toFixed(2);
-    var tone = root.getAttribute('data-hero-tone') || 'dark';
-    var color = tone === 'light'
-      ? 'rgba(255,255,255,' + alpha + ')'
-      : 'rgba(0,0,0,' + alpha + ')';
 
-    root.style.setProperty('--hero-shadow', '0 2px ' + blur + 'px ' + color);
+    var blurSoft = Math.round(2 + k * 0.1);
+    var alphaSoft = (0.09 + k * 0.004).toFixed(2);
+
+    root.style.setProperty('--hero-shadow', '0 2px ' + blur + 'px rgba(' + rgb + ',' + alpha + ')');
+    root.style.setProperty('--hero-shadow-soft', '0 1px ' + blurSoft + 'px rgba(' + rgb + ',' + alphaSoft + ')');
   }
 
   /* 自定义文字色只有在和壁纸明暗相反时才用到首屏上，避免又设回「白字压白底」 */
