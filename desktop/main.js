@@ -37,6 +37,8 @@ const prefs = {
   closeAction: 'tray',
   /* 关闭时问一句「收托盘还是退出」 */
   confirmClose: true,
+  /* 便携版切换后待清理的旧 exe 路径 */
+  replacedExe: '',
   /* 下载新版本走的 HTTP 代理，留空直连。GitHub 慢的时候填这个 */
   updateProxy: '',
   /* 连哪个服务端。空 = 本机 127.0.0.1:8080。
@@ -58,6 +60,7 @@ function loadPrefs() {
       if (raw.closeAction === 'tray' || raw.closeAction === 'quit') prefs.closeAction = raw.closeAction;
       if (typeof raw.confirmClose === 'boolean') prefs.confirmClose = raw.confirmClose;
       if (typeof raw.trayHinted === 'boolean') prefs.trayHinted = raw.trayHinted;
+      if (typeof raw.replacedExe === 'string') prefs.replacedExe = raw.replacedExe;
     }
   } catch (e) {}
 }
@@ -1136,78 +1139,52 @@ function pickAsset(rel) {
   return ans === 0 ? first : second;
 }
 
-/* 便携版没有安装程序，得自己换自己：
-   运行中的 exe 允许改名、但不允许覆盖，所以走「新文件先落地 → 旧的改名让位 → 新的顶上」，
-   全程都在同一个目录里，跨盘也不怕。 */
+/* 便携版没法「就地替换」：exe 被它自己的 launcher 进程占着（EBUSY），
+   运行期间任何进程都覆盖不了，包括它自己 —— 所以不硬来：
+   新版本落到同一个文件夹、用真实版本号命名，重启到它，旧的下次启动再删。
+   文件名带版本号确实不如原地替换好看，但零失败：不碰正在运行的那个文件。 */
 function portableExe() {
   return process.env.PORTABLE_EXECUTABLE_FILE || '';
 }
 
-function sleepSync(ms) {
-  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
-  catch (e) { const end = Date.now() + ms; while (Date.now() < end) {} }
-}
+/* 切换后要清理的旧 exe：新实例起来再删（那时旧进程已经退了） */
+function cleanReplacedPortable() {
+  const old = prefs.replacedExe;
+  if (!old) return;
 
-function replacePortable(newFile) {
-  const dest = portableExe();
-  if (!dest) return { ok: false, error: '当前不是便携版运行方式' };
-
-  const staged = dest + '.new';
-  const old = dest + '.old';
-
-  // 1) 先把新版本拷到同一目录（同盘改名才快，也避免跨盘拷贝中途失败）
-  try {
-    fs.rmSync(staged, { force: true });
-    fs.copyFileSync(newFile, staged);
-  } catch (e) {
-    try { fs.rmSync(staged, { force: true }); } catch (e2) {}
-    return { ok: false, error: '写新版本失败（' + (e.code || e.message) + '），目录可能没有写权限' };
-  }
-
-  try { fs.rmSync(old, { force: true }); } catch (e) {}
-
-  // 2) 旧的让位。杀软/搜索索引偶尔占着一两秒，重试几次
-  let renamed = false;
-  let lastErr = null;
-  for (let i = 0; i < 8; i++) {
-    try { fs.renameSync(dest, old); renamed = true; break; }
-    catch (e) { lastErr = e; sleepSync(350); }
-  }
-
-  if (!renamed) {
-    try { fs.rmSync(staged, { force: true }); } catch (e) {}
-    return { ok: false, error: '原文件被占用，改不了名（' + (lastErr && lastErr.code) + '）' };
-  }
-
-  // 3) 新的顶上；万一失败把旧的放回去
-  for (let i = 0; i < 4; i++) {
-    try { fs.renameSync(staged, dest); return { ok: true }; }
-    catch (e) {
-      lastErr = e;
-      sleepSync(250);
-    }
-  }
-
-  try { fs.renameSync(old, dest); } catch (e) {}
-  try { fs.rmSync(staged, { force: true }); } catch (e) {}
-  return { ok: false, error: '新文件放不回去（' + (lastErr && lastErr.code) + '）' };
-}
-
-/* 上次替换留下的 .old：那时它还在运行，删不掉，这次启动再收 */
-function cleanOldPortable() {
-  const dest = portableExe();
-  if (!dest) return;
-
-  const old = dest + '.old';
   let tries = 0;
 
   const tick = () => {
-    if (!fs.existsSync(old)) return;
-    try { fs.unlinkSync(old); }
-    catch (e) { if (++tries < 6) setTimeout(tick, 800); }
+    if (!fs.existsSync(old)) { prefs.replacedExe = ''; savePrefs(); return; }
+    try {
+      fs.unlinkSync(old);
+      prefs.replacedExe = '';
+      savePrefs();
+    } catch (e) {
+      if (++tries < 20) setTimeout(tick, 800);
+    }
   };
 
   tick();
+}
+
+/* 老版本可能留下的 .old / .new 残骸 */
+function cleanPortableLeftovers() {
+  const dest = portableExe();
+  if (!dest) return;
+
+  ['.old', '.new'].forEach((suffix) => {
+    const f = dest + suffix;
+    let tries = 0;
+
+    const tick = () => {
+      if (!fs.existsSync(f)) return;
+      try { fs.unlinkSync(f); }
+      catch (e) { if (++tries < 8) setTimeout(tick, 900); }
+    };
+
+    tick();
+  });
 }
 
 function downloadAndInstall(rel) {
@@ -1318,46 +1295,45 @@ function downloadAndInstall(rel) {
           const gotPortable = /portable/i.test(asset.name);
 
           if (runningPortable && gotPortable) {
-            // 便携版：直接把当前 exe 换掉再重启，别留一个临时文件让人找
+            // 不碰正在运行的 exe：新版本直接落到同一个文件夹、用真实版本号命名
+            const dest = portableExe();
+            const dir = path.dirname(dest);
+            const next = path.join(dir, asset.name);
+            let saved = target;
+
+            try {
+              if (path.resolve(target) !== path.resolve(next)) {
+                fs.copyFileSync(target, next);
+                saved = next;
+              }
+            } catch (e) {
+              msgBox({
+                type: 'error',
+                message: '保存失败',
+                detail: '写不进 ' + dir + '：' + (e.code || e.message) +
+                  '\n\n新版本还在：' + target
+              });
+              shell.showItemInFolder(target);
+              return;
+            }
+
             const go = msgBoxSync({
               type: 'question',
-              message: '替换并重启到新版本？',
-              detail: '会用新版本覆盖当前这个 exe，然后自动重启。数据和服务端设置都不受影响。',
-              buttons: ['替换并重启', '只下载（我不换）'],
+              message: '切换到新版本并重启？',
+              detail: '新版本已经放在同一个文件夹：\n' + path.basename(saved) +
+                '\n\n点「切换」会关掉当前客户端，用新版本重新打开；旧的那个下次启动自动删掉。',
+              buttons: ['切换并重启', '只下载（稍后自己开）'],
               defaultId: 0,
               cancelId: 1
             });
 
-            if (go !== 0) { shell.showItemInFolder(target); return; }
+            if (go !== 0) { shell.showItemInFolder(saved); return; }
 
-            const rep = replacePortable(target);
+            prefs.replacedExe = dest;
+            savePrefs();
 
-            if (!rep.ok) {
-              // 换不掉也别让人无从下手：在 exe 旁边放一份能直接双击运行的
-              const dest = portableExe() || '';
-              let beside = '';
-              if (dest) {
-                beside = dest.replace(/\.exe$/i, '') + '-新版本.exe';
-                try { fs.copyFileSync(target, beside); } catch (e) { beside = ''; }
-              }
-
-              msgBox({
-                type: 'error',
-                message: '替换失败',
-                detail: rep.error + '\n\n' +
-                  (beside
-                    ? '已经把新版本放在同一个文件夹里，名叫：\n' + path.basename(beside) +
-                      '\n直接双击它就能用新版本，确认没问题后把旧的删掉即可。'
-                    : '新版本在：' + target + '，手动覆盖即可。') +
-                  '\n\n目标位置：' + (dest || '（未识别）')
-              });
-
-              if (beside) shell.showItemInFolder(beside);
-              else shell.showItemInFolder(target);
-              return;
-            }
-
-            try { app.relaunch({ execPath: portableExe(), args: [] }); } catch (e) {}
+            try { app.relaunch({ execPath: saved, args: [] }); } catch (e) {}
+            quitting = true;
             app.quit();
             return;
           }
@@ -1428,7 +1404,8 @@ if (!app.requestSingleInstanceLock()) {
 
     hookDownloads();
     buildMenu();
-    cleanOldPortable();
+    cleanReplacedPortable();
+    cleanPortableLeftovers();
 
     // 连得上就进大厅，连不上（含第一次）先填地址
     await boot();
