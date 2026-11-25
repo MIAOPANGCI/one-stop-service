@@ -1577,6 +1577,14 @@ html[data-glow="off"] .hero-bg::after { display: none; }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
 }
 
+/* 同一行里的输入框和按钮统一高度：btn-primary 是 40、btn-line 是 36，
+   直接放一起会一个高一个矮 */
+.page-tools .btn-primary,
+.page-tools .btn-line,
+.page-tools .btn-text {
+  height: 38px;
+}
+
 .table-wrap {
   background: var(--card);
   border: 1px solid var(--line);
