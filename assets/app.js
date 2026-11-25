@@ -400,6 +400,10 @@
 
       var doneW = false;
       el.addEventListener('did-finish-load', function () { doneW = true; onOk(); });
+      // 页签显示网页自己的标题，比域名好认
+      el.addEventListener('page-title-updated', function (e) {
+        if (e && e.title) setTabName(t.id, e.title);
+      });
       el.addEventListener('did-fail-load', function (e) {
         if (e && e.errorCode === -3) return;     // 主动中止，不算失败
         doneW = true;
@@ -418,6 +422,11 @@
         doneI = true;
         onOk();
         adoptSameOrigin(el);
+        // 同源页面能读到标题；跨域会被拦，页签先留原名字
+        try {
+          var tt = el.contentDocument && el.contentDocument.title;
+          if (tt) setTabName(t.id, tt);
+        } catch (e) {}
       });
       setTimeout(function () { if (!doneI) onFail(); }, 7000);
     }
@@ -491,7 +500,7 @@
       '<i class="tabico">' + homeIco + '</i><span>门户</span></button>';
 
     html += tabs.map(function (t) {
-      return '<button class="tabitem' + (t.id === activeId ? ' on' : '') + '" type="button" data-id="' + t.id + '">' +
+      return '<button class="tabitem' + (t.id === activeId ? ' on' : '') + '" type="button" data-id="' + t.id + '" title="' + esc(t.name) + '">' +
         '<span>' + esc(t.name) + '</span>' +
         '<i class="tabx" data-close="' + t.id + '" title="关闭">✕</i>' +
         '</button>';
@@ -506,6 +515,16 @@
       lastNewId = 0;
     }
 
+    // 页签多了横向滚动，把当前这个滚进可视范围
+    var list = $('#tabList');
+    var cur = list.querySelector('.tabitem.on');
+    if (cur) {
+      var a = cur.getBoundingClientRect();
+      var b = list.getBoundingClientRect();
+      if (a.left < b.left) list.scrollLeft -= (b.left - a.left) + 12;
+      else if (a.right > b.right) list.scrollLeft += (a.right - b.right) + 12;
+    }
+
     var box = $('#tabFrames');
     box.hidden = homeOn;
 
@@ -513,6 +532,22 @@
       var f = frameOf(t.id) || makeFrame(t);
       f.hidden = homeOn || t.id !== activeId;
     });
+  }
+
+  /* 页面标题变了就改页签名，不用整排重建 */
+  function setTabName(id, name) {
+    name = String(name || '').replace(/\s+/g, ' ').trim();
+    if (!name) return;
+
+    var t = findTab(id);
+    if (!t || t.name === name) return;
+    t.name = name;
+
+    var btn = $('#tabList').querySelector('.tabitem[data-id="' + id + '"]');
+    if (!btn) return;
+    var label = btn.querySelector('span');
+    if (label) { label.textContent = name; label.title = name; }
+    btn.title = name;
   }
 
   /* 同源页面才拿得到它的 window：把新窗口截下来，开成我们的页签。
@@ -2254,6 +2289,15 @@
       if (id === 0) goHome();
       else { activeId = id; syncTabs(); }
     });
+
+    // 页签排不下时，滚轮直接横着滚，不用去够那条看不见的滚动条
+    $('#tabList').addEventListener('wheel', function (e) {
+      var list = e.currentTarget;
+      if (list.scrollWidth <= list.clientWidth) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      list.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }, { passive: false });
 
     $('#tabFrames').addEventListener('click', function (e) {
       var pop = e.target.closest('[data-pop]');

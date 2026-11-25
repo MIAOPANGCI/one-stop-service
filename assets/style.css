@@ -2699,6 +2699,8 @@ body.has-tabs .nav { top: var(--tab-h); }
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  flex: 0 0 auto;
+  min-width: 92px;
   max-width: 190px;
   height: 30px;
   padding: 0 11px;

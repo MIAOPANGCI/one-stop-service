@@ -7,7 +7,7 @@
  *   node scripts/launch.mjs desktop  仅桌面客户端服务端（不打开客户端）
  *   node scripts/launch.mjs both     服务端 + 浏览器 + 本机客户端
  *   node scripts/launch.mjs client   只打开本机客户端，连已有的服务端
- *   node scripts/launch.mjs web --port 9000
+ *   node scripts/launch.mjs web --port 9000 --host 192.168.1.20
  *
  * 三种方式共用一个服务端进程、一份 data —— 桌面客户端只是连过去的壳，
  * 所以网页版和桌面版看到的永远是同一批数据。
@@ -20,6 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import os from 'node:os';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -49,6 +50,7 @@ function resolvePort(override) {
 }
 
 let PORT = resolvePort();
+let HOST = '';   // 空 = 用 config.json 里的，默认 0.0.0.0
 
 /* ---------------- 服务端 ---------------- */
 
@@ -86,6 +88,17 @@ function openBrowser(url) {
 
 function log(msg) { console.log('\n  ' + msg); }
 
+function localIPs() {
+  const out = [];
+  const nets = os.networkInterfaces();
+  Object.keys(nets).forEach((k) => {
+    (nets[k] || []).forEach((n) => {
+      if (n.family === 'IPv4' && !n.internal && !/^169\.254\./.test(n.address)) out.push(n.address);
+    });
+  });
+  return out;
+}
+
 const MODE_TEXT = { both: '网页版 + 桌面客户端', web: '仅网页版', desktop: '仅桌面客户端' };
 
 async function ensureServer(serverMode, openPage) {
@@ -103,6 +116,7 @@ async function ensureServer(serverMode, openPage) {
   }
 
   const args = [path.join(ROOT, 'server.js'), '--mode', serverMode, '--port', String(PORT)];
+  if (HOST) args.push('--host', HOST);
   if (openPage) args.push('--open');
 
   log('启动服务端（mode=' + serverMode + '，端口 ' + PORT + '）');
@@ -253,10 +267,16 @@ async function menu() {
     const p = await ask('  端口号 [默认 ' + PORT + ']：');
     PORT = resolvePort(p || PORT);
 
+    const ips = localIPs();
+    if (ips.length) console.log('  本机地址：' + ips.join(' / '));
+
+    const h = await ask('  监听地址 [回车 = 0.0.0.0 全部网卡；127.0.0.1 仅本机；也可填上面某个 IP]：');
+    HOST = String(h || '').trim() || '0.0.0.0';
+
     const m = (await ask('  模式 [1 仅网页 / 2 仅桌面 / 3 两者，默认 3]：') || '3').trim();
     const mode = m === '1' ? 'web' : m === '2' ? 'desktop' : 'both';
 
-    log('端口 ' + PORT + ' · ' + MODE_TEXT[mode]);
+    log('端口 ' + PORT + ' · 监听 ' + HOST + ' · ' + MODE_TEXT[mode]);
     return run(mode, mode !== 'desktop');
   }
 
@@ -276,8 +296,11 @@ const modeArg = argv.find((a) => !a.startsWith('-') &&
   ['web', 'desktop', 'both', 'client'].includes(a.toLowerCase()));
 const portIdx = argv.indexOf('--port');
 const portArg = portIdx > -1 ? argv[portIdx + 1] : '';
+const hostIdx = argv.indexOf('--host');
+const hostArg = hostIdx > -1 ? argv[hostIdx + 1] : '';
 
 if (portArg) PORT = resolvePort(portArg);
+if (hostArg) HOST = String(hostArg).trim();
 
 if (modeArg) {
   const MODE = modeArg.toLowerCase();
