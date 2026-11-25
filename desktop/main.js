@@ -993,6 +993,48 @@ function pickAsset(rel) {
   return ans === 0 ? first : second;
 }
 
+/* 便携版没有安装程序，得自己换自己：
+   Windows 允许改名正在运行的 exe，但不能覆盖，所以先把旧的挪开、再拷新的。 */
+function portableExe() {
+  return process.env.PORTABLE_EXECUTABLE_FILE || '';
+}
+
+function replacePortable(newFile) {
+  const dest = portableExe();
+  if (!dest) return false;
+
+  const old = dest + '.old';
+  try { fs.rmSync(old, { force: true }); } catch (e) {}
+
+  try { fs.renameSync(dest, old); }
+  catch (e) { return false; }
+
+  try { fs.copyFileSync(newFile, dest); }
+  catch (e) {
+    try { fs.renameSync(old, dest); } catch (e2) {}
+    return false;
+  }
+
+  return true;
+}
+
+/* 上次替换留下的 .old：那时它还在运行，删不掉，这次启动再收 */
+function cleanOldPortable() {
+  const dest = portableExe();
+  if (!dest) return;
+
+  const old = dest + '.old';
+  let tries = 0;
+
+  const tick = () => {
+    if (!fs.existsSync(old)) return;
+    try { fs.unlinkSync(old); }
+    catch (e) { if (++tries < 6) setTimeout(tick, 800); }
+  };
+
+  tick();
+}
+
 function downloadAndInstall(rel) {
   const asset = pickAsset(rel);
 
@@ -1096,6 +1138,48 @@ function downloadAndInstall(rel) {
       file.on('finish', () => {
         file.close(() => {
           dlFinish(id, 'ok', '下载完成');
+
+          const runningPortable = !!portableExe();
+          const gotPortable = /portable/i.test(asset.name);
+
+          if (runningPortable && gotPortable) {
+            // 便携版：直接把当前 exe 换掉再重启，别留一个临时文件让人找
+            const go = msgBoxSync({
+              type: 'question',
+              message: '替换并重启到新版本？',
+              detail: '会用新版本覆盖当前这个 exe，然后自动重启。数据和服务端设置都不受影响。',
+              buttons: ['替换并重启', '只下载（我不换）'],
+              defaultId: 0,
+              cancelId: 1
+            });
+
+            if (go !== 0) { shell.showItemInFolder(target); return; }
+
+            if (!replacePortable(target)) {
+              msgBox({
+                type: 'error',
+                message: '替换失败',
+                detail: '可能没有写入权限。新版本已经下到这里，手动覆盖即可：\n' + target
+              });
+              shell.showItemInFolder(target);
+              return;
+            }
+
+            try { app.relaunch({ execPath: portableExe(), args: [] }); } catch (e) {}
+            app.quit();
+            return;
+          }
+
+          if (!runningPortable && gotPortable) {
+            msgBox({
+              type: 'info',
+              message: '便携版已下载',
+              detail: '你现在用的是安装版。要用便携版的话，直接运行下载好的文件即可，不用安装。'
+            });
+            shell.showItemInFolder(target);
+            return;
+          }
+
           const go = msgBoxSync({
             type: 'question',
             message: '下载完成，现在安装吗？',
@@ -1104,6 +1188,7 @@ function downloadAndInstall(rel) {
             defaultId: 0,
             cancelId: 1
           });
+
           if (go === 0) {
             spawn(target, [], { detached: true, stdio: 'ignore' }).unref();
             app.quit();
@@ -1151,6 +1236,7 @@ if (!app.requestSingleInstanceLock()) {
 
     hookDownloads();
     buildMenu();
+    cleanOldPortable();
 
     // 连得上就进大厅，连不上（含第一次）先填地址
     await boot();

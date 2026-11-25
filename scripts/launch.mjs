@@ -55,10 +55,16 @@ let HOST = '';   // 空 = 用 config.json 里的，默认 0.0.0.0
 /* ---------------- 服务端 ---------------- */
 
 /* 探测端口上是不是我们的服务端；顺便带回它当前的启动模式 */
+/* 服务端可能只绑了某块网卡（比如 172.18.0.135），探 127.0.0.1 会探不到，
+   所以按实际监听地址去连 */
+function probeHost() {
+  return HOST && HOST !== '0.0.0.0' && HOST !== '::' ? HOST : '127.0.0.1';
+}
+
 function ping() {
   return new Promise((resolve) => {
     const req = http.get(
-      { host: '127.0.0.1', port: PORT, path: '/api/ping', timeout: 900,
+      { host: probeHost(), port: PORT, path: '/api/ping', timeout: 900,
         headers: { 'User-Agent': 'CorpPortalDesktop/launcher' } },
       (res) => {
         let body = '';
@@ -161,7 +167,7 @@ async function ensureServer(serverMode, openPage) {
     if (alive.mode !== serverMode) {
       console.log('  想换成「' + MODE_TEXT[serverMode] + '」，先关掉那个服务端窗口再重新启动。');
     }
-    if (openPage) openBrowser('http://localhost:' + PORT + '/');
+    if (openPage) openBrowser('http://' + probeHost() + ':' + PORT + '/');
     return null;
   }
 
