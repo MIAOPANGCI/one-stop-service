@@ -40,6 +40,7 @@
     <div class="page-tools">
       <input id="search" type="search" placeholder="搜索账号或姓名" autocomplete="off">
       <a class="btn-line" id="rolesLink" href="/roles.html" style="display:inline-flex;align-items:center;text-decoration:none">角色管理</a>
+      <button class="btn-line" id="batchRoleBtn" type="button" hidden>批量改角色<span id="selCount"></span></button>
       <button class="btn-line" id="batchUserBtn" type="button">批量新增</button>
       <button class="btn-primary" id="addUserBtn" type="button">＋ 新增用户</button>
     </div>
@@ -49,6 +50,7 @@
     <table class="utable">
       <thead>
         <tr>
+          <th class="ta-c th-check"><input type="checkbox" id="checkAll" title="全选"></th>
           <th>账号</th>
           <th>姓名</th>
           <th>角色</th>
@@ -136,6 +138,30 @@
       <div class="spacer"></div>
       <button class="btn-text" type="button" data-close>取消</button>
       <button class="btn-primary" id="batchSaveBtn" type="button">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 批量改角色弹窗 -->
+<div class="modal" id="batchRoleModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true" style="max-width:420px">
+    <div class="modal-head">
+      <h3>批量修改角色</h3>
+      <button class="x" type="button" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint" id="brWho" style="margin:0 0 12px"></p>
+      <label class="field">
+        <span>改成</span>
+        <select id="br-role"></select>
+      </label>
+      <p class="warn-line" id="brWarn" hidden></p>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn-text" type="button" data-close>取消</button>
+      <button class="btn-primary" id="brSaveBtn" type="button">确定修改</button>
     </div>
   </div>
 </div>

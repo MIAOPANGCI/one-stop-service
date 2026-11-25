@@ -1706,6 +1706,22 @@ body.sorting .group-head h3::after {
 .utable tbody tr:hover { background: #fafcfc; }
 .utable-empty { padding: 44px 0; text-align: center; color: var(--ink-3); }
 .ta-r { text-align: right; }
+.ta-c { text-align: center; }
+
+/* 表格里的勾选列 */
+.th-check { width: 40px; }
+.th-check input,
+.row-check {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: pointer;
+  vertical-align: middle;
+}
+.row-check:disabled { cursor: not-allowed; opacity: .4; }
+
+/* 新增的选中列窄一点，别把账号列挤了 */
+.utable td.ta-c { padding-left: 10px; padding-right: 6px; }
 .muted { color: var(--ink-2); }
 
 .ucell { display: flex; align-items: center; gap: 10px; }

@@ -12,6 +12,7 @@
   var keyword = '';
   var editingId = null;
   var busy = false;
+  var picked = {};   // 批量改角色：勾中的账号 id
 
   var COLORS = ['#2fa795', '#1c6fd6', '#5b6bd6', '#7c3aed', '#0f766e', '#d97706', '#be185d', '#334155'];
 
@@ -75,6 +76,9 @@
     tbody.innerHTML = list.map(function (u) {
       var isMe = me && u.id === me.id;
       return '<tr data-id="' + esc(u.id) + '">' +
+        '<td class="ta-c"><input type="checkbox" class="row-check" data-check="' + esc(u.id) + '"' +
+          (isMe ? ' disabled title="不能改自己的角色"' : '') +
+          (picked[u.id] ? ' checked' : '') + '></td>' +
         '<td><div class="ucell">' +
           '<span class="u-avatar" style="background:' + colorOf(u.username) + '">' +
             esc((u.username || '?').slice(0, 1).toUpperCase()) + '</span>' +
@@ -94,6 +98,65 @@
         '</td>' +
       '</tr>';
     }).join('');
+
+    syncSelBar();
+  }
+
+  function selectedIds() {
+    return Object.keys(picked).filter(function (id) { return picked[id]; });
+  }
+
+  function syncSelBar() {
+    var n = selectedIds().length;
+    var btn = $('#batchRoleBtn');
+    btn.hidden = !n;
+    $('#selCount').textContent = n ? '（' + n + '）' : '';
+
+    var all = $('#checkAll');
+    var boxes = [].slice.call(document.querySelectorAll('.row-check:not([disabled])'));
+    all.checked = boxes.length > 0 && boxes.every(function (b) { return b.checked; });
+    all.indeterminate = !all.checked && boxes.some(function (b) { return b.checked; });
+  }
+
+  /* ---------------- 批量改角色 ---------------- */
+  function openBatchRole() {
+    var ids = selectedIds();
+    if (!ids.length) return;
+
+    $('#brWho').textContent = '将修改 ' + ids.length + ' 个账号的角色，改完对方需要重新登录。';
+    $('#br-role').innerHTML = Object.keys(roles).map(function (id) {
+      return '<option value="' + esc(id) + '">' + esc(roles[id]) + '</option>';
+    }).join('');
+    $('#brWarn').hidden = true;
+    openModal($('#batchRoleModal'));
+  }
+
+  function saveBatchRole() {
+    if (busy) return;
+
+    var ids = selectedIds();
+    var role = $('#br-role').value;
+    if (!ids.length) return;
+
+    var btn = $('#brSaveBtn');
+    busy = true;
+    btn.disabled = true;
+    btn.textContent = '提交中…';
+
+    api('POST', '/api/users/roles', { ids: ids, role: role }).then(function (d) {
+      picked = {};
+      closeModal($('#batchRoleModal'));
+      toast('已把 ' + d.changed + ' 个账号改成「' + (roles[role] || role) + '」');
+      return load();
+    }).catch(function (e) {
+      var w = $('#brWarn');
+      w.textContent = e.message;
+      w.hidden = false;
+    }).then(function () {
+      busy = false;
+      btn.disabled = false;
+      btn.textContent = '确定修改';
+    });
   }
 
   /* ---------------- 接口 ---------------- */
@@ -365,7 +428,26 @@
     $('#addUserBtn').addEventListener('click', function () { openUserModal(null); });
     $('#batchUserBtn').addEventListener('click', openBatchModal);
     $('#batchSaveBtn').addEventListener('click', saveBatch);
+    $('#batchRoleBtn').addEventListener('click', openBatchRole);
+    $('#brSaveBtn').addEventListener('click', saveBatchRole);
     $('#b-list').addEventListener('input', paintBatchPreview);
+
+    // 勾选 / 全选
+    $('#checkAll').addEventListener('change', function () {
+      var on = this.checked;
+      [].slice.call(document.querySelectorAll('.row-check:not([disabled])')).forEach(function (b) {
+        b.checked = on;
+        picked[b.dataset.check] = on;
+      });
+      syncSelBar();
+    });
+
+    $('#tbody').addEventListener('change', function (e) {
+      var b = e.target.closest('.row-check');
+      if (!b) return;
+      picked[b.dataset.check] = b.checked;
+      syncSelBar();
+    });
     $('#saveUserBtn').addEventListener('click', save);
 
     document.addEventListener('click', function (e) {

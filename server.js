@@ -2295,6 +2295,49 @@ const server = http.createServer(function (req, res) {
     return;
   }
 
+  /* ---------- 批量改角色 ---------- */
+  if (pathname === '/api/users/roles' && method === 'POST') {
+    if (!needCap('users')) return;
+    readJson(req).then(function (body) {
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      const role = String(body.role || '');
+
+      if (!db.roles.some(function (r) { return r.id === role; })) return deny(400, '角色不存在');
+      if (!ids.length) return deny(400, '先勾选要改的用户');
+
+      const targets = db.users.filter(function (u) { return ids.indexOf(u.id) > -1; });
+      if (!targets.length) return deny(400, '没找到这些用户');
+      if (targets.some(function (u) { return u.id === user.id; })) {
+        return deny(400, '不能修改自己的角色，换个管理员操作');
+      }
+
+      // 一次把管理员都降级会让后台没人管
+      const adminsNow = db.users.filter(function (u) { return u.role === 'admin' && u.enabled; }).length;
+      const losing = targets.filter(function (u) {
+        return u.role === 'admin' && u.enabled && role !== 'admin';
+      }).length;
+      if (adminsNow - losing < 1) return deny(400, '至少要保留一名启用状态的管理员');
+
+      let changed = 0;
+      targets.forEach(function (u) {
+        if (u.role === role) return;
+        u.role = role;
+        dropUserSessions(u.id);   // 权限立刻生效，别让旧会话继续用老权限
+        changed++;
+      });
+
+      persist();
+      console.log('[用户] ' + user.username + ' 把 ' + changed + ' 个账号改成了 ' + (roleLabels()[role] || role));
+
+      sendJson(res, 200, {
+        ok: true, changed: changed,
+        users: db.users.map(publicUser),
+        roles: roleLabels()
+      });
+    }).catch(function (e) { deny(400, e.message); });
+    return;
+  }
+
   /* ---------- 批量新增用户 ---------- */
   if (pathname === '/api/users/batch' && method === 'POST') {
     if (!needCap('users')) return;
