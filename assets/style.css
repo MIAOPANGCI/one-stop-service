@@ -937,6 +937,35 @@ html[data-glow="off"] .hero-bg::after { display: none; }
 }
 .field textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
 
+/* 单选 / 复选（关闭行为这类） */
+.radio-row {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.radio-item,
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.radio-item input[type="radio"],
+.check-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.radio-item input:checked + span,
+.check-row input:checked + span { color: var(--ink); }
+
 /* 批量新增的解析预览 */
 .batch-preview {
   margin: 8px 0 0;

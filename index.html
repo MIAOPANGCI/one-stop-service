@@ -497,6 +497,25 @@
                                   </div>
 
                                   <div class="field">
+                                    <span>关闭主界面时</span>
+                                    <div class="radio-row">
+                                      <label class="radio-item">
+                                        <input type="radio" name="closeAct" value="tray" checked>
+                                        <span>最小化到系统托盘</span>
+                                      </label>
+                                      <label class="radio-item">
+                                        <input type="radio" name="closeAct" value="quit">
+                                        <span>退出程序</span>
+                                      </label>
+                                    </div>
+                                    <label class="check-row">
+                                      <input type="checkbox" id="closeConfirm" checked>
+                                      <span>关闭时提示，让我每次自己选</span>
+                                    </label>
+                                    <small class="hint">收进托盘后服务不中断，双击托盘图标或再点一次桌面快捷方式就能回来。右键托盘图标有「退出」。</small>
+                                  </div>
+
+                                  <div class="field">
                                     <span>更新下载代理</span>
                                     <div class="server-row">
                                       <input id="s-proxy" type="text" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:7897">

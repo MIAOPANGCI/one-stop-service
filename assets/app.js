@@ -1437,6 +1437,12 @@
         ? '还没连接服务端'
         : ('当前 ' + info.origin + (info.local ? '（本机）' : '（远端，数据在对方机器上）'));
       if ($('#s-proxy')) $('#s-proxy').value = info.updateProxy || '';
+
+      var act = info.closeAction === 'quit' ? 'quit' : 'tray';
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="closeAct"]'), function (r) {
+        r.checked = r.value === act;
+      });
+      if ($('#closeConfirm')) $('#closeConfirm').checked = info.confirmClose !== false;
     }).catch(function () {});
   }
 
@@ -2552,6 +2558,21 @@
     if (DESKTOP && $('#serverSaveBtn')) {
       $('#deskSec').hidden = false;
       loadServerInfo();
+
+      if ($('#closeConfirm')) {
+        var saveClose = function () {
+          var picked = document.querySelector('input[name="closeAct"]:checked');
+          var act = picked ? picked.value : 'tray';
+          window.desktopAPI.setCloseBehavior(act, $('#closeConfirm').checked)
+            .then(function (r) { if (r && r.ok) toast('关闭行为已保存'); })
+            .catch(function () { toast('保存失败'); });
+        };
+
+        Array.prototype.forEach.call(document.querySelectorAll('input[name="closeAct"]'), function (r) {
+          r.addEventListener('change', saveClose);
+        });
+        $('#closeConfirm').addEventListener('change', saveClose);
+      }
 
       if ($('#proxySaveBtn')) {
         $('#proxySaveBtn').addEventListener('click', function () {

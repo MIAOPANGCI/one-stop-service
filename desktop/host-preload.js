@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('desktopAPI', {
     return ipcRenderer.invoke('portal:set-server', String(url || ''));
   },
 
+  // 关闭主界面时：'tray' 收托盘 / 'quit' 退出；confirm 为是否每次询问
+  setCloseBehavior(action, confirm) {
+    return ipcRenderer.invoke('portal:set-close-behavior', String(action || ''), !!confirm);
+  },
+
   // 更新下载代理（空 = 直连）
   setUpdateProxy(v) {
     return ipcRenderer.invoke('portal:set-update-proxy', String(v || ''));

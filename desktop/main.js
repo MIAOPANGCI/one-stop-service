@@ -10,7 +10,7 @@
  * 之后所有数据都来自那个服务端，和网页版共用同一份。
  */
 
-const { app, BrowserWindow, Menu, dialog, shell, session, ipcMain, Notification } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, shell, session, ipcMain, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -26,11 +26,17 @@ const REPO = 'MIAOPANGCI/one-stop-service';
 let win = null;
 let setupWin = null;
 let aboutWin = null;
+let tray = null;
+let quitting = false;
 
 /* ---------------- 本地偏好（菜单栏显隐这类） ---------------- */
 
 const prefs = {
   hideMenuBar: false,
+  /* 点右上角关闭时：tray 收进托盘 / quit 直接退出 */
+  closeAction: 'tray',
+  /* 关闭时问一句「收托盘还是退出」 */
+  confirmClose: true,
   /* 下载新版本走的 HTTP 代理，留空直连。GitHub 慢的时候填这个 */
   updateProxy: '',
   /* 连哪个服务端。空 = 本机 127.0.0.1:8080。
@@ -49,6 +55,9 @@ function loadPrefs() {
       if (typeof raw.hideMenuBar === 'boolean') prefs.hideMenuBar = raw.hideMenuBar;
       if (typeof raw.serverUrl === 'string') prefs.serverUrl = raw.serverUrl;
       if (typeof raw.updateProxy === 'string') prefs.updateProxy = raw.updateProxy;
+      if (raw.closeAction === 'tray' || raw.closeAction === 'quit') prefs.closeAction = raw.closeAction;
+      if (typeof raw.confirmClose === 'boolean') prefs.confirmClose = raw.confirmClose;
+      if (typeof raw.trayHinted === 'boolean') prefs.trayHinted = raw.trayHinted;
     }
   } catch (e) {}
 }
@@ -255,7 +264,119 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  win.on('close', handleClose);
   win.on('closed', () => { win = null; });
+}
+
+/* ---------------- 托盘 / 关闭行为 ---------------- */
+
+function showMain() {
+  if (win && !win.isDestroyed()) {
+    if (!win.isVisible()) win.show();
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    return;
+  }
+  boot();
+}
+
+function ensureTray() {
+  if (tray) return tray;
+
+  const ico = iconPath();
+  if (!ico) return null;
+
+  let img = nativeImage.createFromPath(ico);
+  if (!img.isEmpty()) img = img.resize({ width: 16, height: 16 });
+
+  try {
+    tray = new Tray(img);
+
+    tray.setToolTip('企业服务大厅');
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: '打开主界面', click: () => showMain() },
+      { type: 'separator' },
+      { label: '检查更新', click: () => checkUpdate(true) },
+      { label: '重新设置服务端…', click: () => createSetupWindow(serverOrigin(), '') },
+      { type: 'separator' },
+      { label: '退出', click: () => { quitting = true; app.quit(); } }
+    ]));
+
+    tray.on('click', () => showMain());
+    tray.on('double-click', () => showMain());
+  } catch (e) {
+    tray = null;
+  }
+
+  return tray;
+}
+
+function hideToTray() {
+  if (!ensureTray()) { quitting = true; app.quit(); return; }
+  if (win && !win.isDestroyed()) win.hide();
+
+  // 头一次收进托盘提示一句，免得以为关掉了
+  if (!prefs.trayHinted) {
+    prefs.trayHinted = true;
+    savePrefs();
+    try {
+      tray.displayBalloon({
+        title: '企业服务大厅还在运行',
+        content: '已经收进托盘，双击图标就能打开；要彻底退出请右键托盘图标。'
+      });
+    } catch (e) {}
+  }
+}
+
+async function askCloseBehavior() {
+  const opts = {
+    type: 'question',
+    message: '关闭主界面？',
+    detail: '收到托盘后服务不中断，双击托盘图标就能回来。',
+    buttons: ['最小化到托盘', '退出程序', '取消'],
+    defaultId: prefs.closeAction === 'quit' ? 1 : 0,
+    cancelId: 2,
+    checkboxLabel: '记住我的选择，以后不再问',
+    checkboxChecked: false,
+    noLink: true
+  };
+
+  const p = parentWin();
+  const r = p ? await dialog.showMessageBox(p, opts) : await dialog.showMessageBox(opts);
+
+  return {
+    action: r.response === 1 ? 'quit' : 'tray',
+    cancel: r.response === 2,
+    remember: !!r.checkboxChecked
+  };
+}
+
+function handleClose(e) {
+  if (quitting) return;
+
+  // 没有托盘（比如图标读不出来）就别拦着了
+  if (!iconPath()) return;
+
+  e.preventDefault();
+
+  if (!prefs.confirmClose) {
+    if (prefs.closeAction === 'quit') { quitting = true; app.quit(); return; }
+    hideToTray();
+    return;
+  }
+
+  askCloseBehavior().then((r) => {
+    if (r.cancel) return;
+
+    if (r.remember) {
+      prefs.closeAction = r.action;
+      prefs.confirmClose = false;
+      savePrefs();
+    }
+
+    if (r.action === 'quit') { quitting = true; app.quit(); return; }
+    hideToTray();
+  }).catch(() => {});
 }
 
 /* ---------------- webview 策略 ---------------- */
@@ -447,6 +568,8 @@ ipcMain.handle('portal:server-info', () => {
     local: !!origin && isLocalOrigin(origin),
     packaged: PACKAGED,
     updateProxy: prefs.updateProxy || '',
+    closeAction: prefs.closeAction,
+    confirmClose: prefs.confirmClose,
     version: app.getVersion()
   };
 });
@@ -469,6 +592,14 @@ ipcMain.handle('portal:set-server', async (e, value) => {
 
   setTimeout(() => { app.relaunch(); app.exit(0); }, 300);
   return { ok: true, origin: url, restart: true };
+});
+
+/* 关闭主界面时的行为 */
+ipcMain.handle('portal:set-close-behavior', (e, action, confirm) => {
+  if (action === 'tray' || action === 'quit') prefs.closeAction = action;
+  if (typeof confirm === 'boolean') prefs.confirmClose = confirm;
+  savePrefs();
+  return { ok: true, closeAction: prefs.closeAction, confirmClose: prefs.confirmClose };
 });
 
 /* 更新下载代理：空字符串 = 直连 */
@@ -1221,9 +1352,7 @@ function downloadAndInstall(rel) {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
-  });
+  app.on('second-instance', () => showMain());
 
   app.whenReady().then(async () => {
     try { app.setAppUserModelId('cn.szwl.portal'); } catch (e) {}
@@ -1249,10 +1378,14 @@ if (!app.requestSingleInstanceLock()) {
     });
   });
 
+  app.on('before-quit', () => { quitting = true; });
+
   app.on('window-all-closed', () => {
     // 设置窗 → 大厅的切换有个瞬间可能没有窗口，等一拍再判断
     setTimeout(() => {
-      if (BrowserWindow.getAllWindows().length === 0) app.quit();
+      if (BrowserWindow.getAllWindows().length) return;
+      if (!quitting && tray && prefs.closeAction === 'tray') return;   // 收在托盘里，别退
+      app.quit();
     }, 80);
   });
 }
