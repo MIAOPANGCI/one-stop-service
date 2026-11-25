@@ -272,7 +272,8 @@ const notes = NOTES_ARG || [
   '## 桌面客户端',
   '',
   '附件里的 portal-setup-x.y.z.exe 是 Windows 安装包（内置浏览器内核，能打开禁止被 iframe 内嵌的系统）；',
-  'portal-portable-x.y.z.exe 是免安装版，解压即用。',
+  'portal-portable-x.y.z.exe 是便携版，单个文件，双击时才解压到临时目录；',
+  'portal-unpacked-x.y.z.zip 是目录版，解压一次、以后直接双击里面的 exe，启动最快。',
   '',
   '## 升级方式',
   '',
@@ -330,6 +331,13 @@ if (fs.existsSync(distDir)) {
   for (const f of exes) {
     uploaded.push(await uploadAsset(path.join(distDir, f), f, 'application/octet-stream'));
   }
+
+  // 目录版（解压即用，启动最快）
+  const packed = fs.readdirSync(distDir).filter(f => /^portal-unpacked-.*\.zip$/i.test(f));
+  for (const f of packed) {
+    uploaded.push(await uploadAsset(path.join(distDir, f), f, 'application/zip'));
+  }
+
   if (!exes.length) warn('desktop/dist 里没有 exe，跳过桌面端附件');
 } else {
   warn('没有 desktop/dist，跳过桌面端附件');

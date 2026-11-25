@@ -67,6 +67,28 @@ if (r.status !== 0) {
 }
 
 const dist = path.join(DESK, 'dist');
+
+/* 额外打一个「目录版」：解压出来直接双击 exe，启动快、不写入注册表，
+   适合固定办公电脑。便携版每次双击都要先解压到临时目录，启动慢。 */
+(function packUnpacked() {
+  const src = path.join(dist, 'win-unpacked');
+  if (!fs.existsSync(src)) return;
+
+  const sevenZip = path.join(DESK, 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe');
+  const out = path.join(dist, 'portal-unpacked-' + rootPkg.version + '.zip');
+  try { fs.rmSync(out, { force: true }); } catch (e) {}
+
+  const argv = ['a', '-tzip', '-mx=1', '-bso0', '-bsp0', out, '*'];
+  const bin = fs.existsSync(sevenZip) ? sevenZip : '7z';
+  const res = spawnSync(bin, argv, { cwd: src, stdio: 'ignore' });
+
+  if (res.status === 0 && fs.existsSync(out)) {
+    console.log('  已打包目录版：' + path.basename(out));
+  } else {
+    console.log('  ! 目录版打包失败，跳过（不影响 exe）');
+  }
+})();
+
 const files = fs.existsSync(dist)
   ? fs.readdirSync(dist).filter((f) => f.endsWith('.exe'))
   : [];
