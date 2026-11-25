@@ -101,6 +101,56 @@ function localIPs() {
 
 const MODE_TEXT = { both: '网页版 + 桌面客户端', web: '仅网页版', desktop: '仅桌面客户端' };
 
+/* 更新握手用的文件：服务端要重启时写 pending，替换完由 runner 写 done */
+const FLAG = path.join(ROOT, 'data', '.update-flag.json');
+
+function readFlag() {
+  try { return JSON.parse(fs.readFileSync(FLAG, 'utf8')); }
+  catch (e) { return null; }
+}
+
+function clearFlag() {
+  try { fs.rmSync(FLAG, { force: true }); } catch (e) {}
+}
+
+async function waitFlagDone(ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    const f = readFlag();
+    if (f && f.stage === 'done') return f;
+    await wait(500);
+  }
+  return null;
+}
+
+function spawnServer(serverMode, openPage) {
+  const args = [path.join(ROOT, 'server.js'), '--mode', serverMode, '--port', String(PORT)];
+  if (HOST) args.push('--host', HOST);
+  if (openPage) args.push('--open');
+
+  try { fs.mkdirSync(path.dirname(FLAG), { recursive: true }); } catch (e) {}
+
+  return spawn(process.execPath, args, {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      // 告诉服务端：重启交给启动器，你自己别去拉新进程
+      PORTAL_SUPERVISED: '1',
+      PORTAL_UPDATE_FLAG: FLAG
+    }
+  });
+}
+
+async function waitUp(ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    await wait(250);
+    if ((await ping()).ok) return true;
+  }
+  return false;
+}
+
 async function ensureServer(serverMode, openPage) {
   const alive = await ping();
 
@@ -115,20 +165,50 @@ async function ensureServer(serverMode, openPage) {
     return null;
   }
 
-  const args = [path.join(ROOT, 'server.js'), '--mode', serverMode, '--port', String(PORT)];
-  if (HOST) args.push('--host', HOST);
-  if (openPage) args.push('--open');
-
   log('启动服务端（mode=' + serverMode + '，端口 ' + PORT + '）');
-  const proc = spawn(process.execPath, args, { cwd: ROOT, stdio: 'inherit' });
+  const proc = spawnServer(serverMode, openPage);
 
-  for (let i = 0; i < 40; i++) {
-    await wait(250);
-    if ((await ping()).ok) return proc;
-  }
+  if (await waitUp(10000)) return proc;
 
   console.error('\n  ✗ 服务端起不来，检查端口 ' + PORT + ' 是否被别的程序占用\n');
   return proc;
+}
+
+/* 守着服务端：升级时它会退出（留个 pending 标记），
+   等 runner 换完文件再按同样的参数拉起来 —— 端口、模式都不变。 */
+async function supervise(srv, serverMode, openPage, hint) {
+  let cur = srv;
+
+  if (!cur) {
+    console.log('\n  服务端已经在别的窗口跑着，这边不用守着。');
+    return;
+  }
+
+  console.log('\n  ' + hint);
+
+  while (cur) {
+    await new Promise((resolve) => cur.on('exit', resolve));
+
+    const flag = readFlag();
+    if (!flag || flag.stage !== 'pending') break;
+
+    log('服务端已退出，正在替换文件（' + (flag.from || '?') + ' -> ' + (flag.to || '?') + '）…');
+    const done = await waitFlagDone(90000);
+    clearFlag();
+
+    if (!done) {
+      console.error('\n  ✗ 更新没走完，请手动重新启动一次。');
+      break;
+    }
+
+    log('文件已替换（v' + (done.version || flag.to || '?') + '），重新启动服务端…');
+    cur = spawnServer(serverMode, openPage);
+
+    if (!(await waitUp(15000))) {
+      console.error('\n  ✗ 新版本没起来，看看 ' + path.join(ROOT, 'data', 'update.log'));
+      break;
+    }
+  }
 }
 
 function clientDepsReady() {
@@ -169,17 +249,6 @@ function waitExit(proc) {
   return new Promise((resolve) => proc.on('exit', resolve));
 }
 
-/* 服务端是自己起的，就得有人守着：
-   这个进程一退，控制台一关，服务端跟着停。 */
-async function keepAlive(srv, hint) {
-  if (!srv) {
-    console.log('\n  服务端已经在别的窗口跑着，这边不用守着。');
-    return;
-  }
-  console.log('\n  ' + hint);
-  await waitExit(srv);
-}
-
 /* mode: web | desktop | both | client */
 async function run(mode, openPage) {
   if (mode === 'client') {
@@ -189,6 +258,7 @@ async function run(mode, openPage) {
   }
 
   const srv = await ensureServer(mode, openPage);
+  const hint = '服务端在跑，这个窗口别关（关了服务就停）。';
 
   if (mode === 'both') {
     const client = startClient((code) => {
@@ -196,13 +266,17 @@ async function run(mode, openPage) {
       process.exit(code || 0);
     });
 
-    if (client) return;
+    if (client) {
+      // 客户端开着的时候也要盯着服务端，不然升级后就没人把它拉起来了
+      supervise(srv, mode, openPage, hint);
+      return;
+    }
 
-    await keepAlive(srv, '服务端在跑，这个窗口别关（关了服务就停）。关掉再按 Ctrl+C 结束。');
+    await supervise(srv, mode, openPage, hint);
     return;
   }
 
-  await keepAlive(srv, '服务端在跑，这个窗口别关（关了服务就停）。按 Ctrl+C 结束。');
+  await supervise(srv, mode, openPage, hint);
 }
 
 /* ---------------- 交互菜单 ---------------- */

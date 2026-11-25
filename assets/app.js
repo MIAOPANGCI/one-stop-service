@@ -1378,6 +1378,7 @@
       $('#serverNow').textContent = !info.origin
         ? '还没连接服务端'
         : ('当前 ' + info.origin + (info.local ? '（本机）' : '（远端，数据在对方机器上）'));
+      if ($('#s-proxy')) $('#s-proxy').value = info.updateProxy || '';
     }).catch(function () {});
   }
 
@@ -2397,6 +2398,24 @@
     if (DESKTOP && $('#serverSaveBtn')) {
       $('#deskSec').hidden = false;
       loadServerInfo();
+
+      if ($('#proxySaveBtn')) {
+        $('#proxySaveBtn').addEventListener('click', function () {
+          var btn = this;
+          var v = $('#s-proxy').value.trim();
+          btn.disabled = true;
+
+          window.desktopAPI.setUpdateProxy(v).then(function (r) {
+            btn.disabled = false;
+            if (!r || !r.ok) { toast((r && r.error) || '保存失败'); return; }
+            $('#s-proxy').value = r.updateProxy;
+            toast(r.updateProxy ? '代理已保存，下次下载走它' : '已改为直连');
+          }).catch(function () {
+            btn.disabled = false;
+            toast('保存失败');
+          });
+        });
+      }
 
       $('#serverSaveBtn').addEventListener('click', function () {
         var v = $('#s-server').value.trim();

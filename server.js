@@ -846,11 +846,12 @@ function httpsBinary(url, timeoutMs) {
       res.on('end', function () { resolve(Buffer.concat(chunks)); });
     };
 
-    const proxy = process.env.UPDATE_PROXY || '';
+    // 代理优先级：环境变量 > config.json 里的 updateProxy
+    const proxy = process.env.UPDATE_PROXY || (CFG && CFG.updateProxy) || '';
 
     if (proxy) {
       let pu;
-      try { pu = new URL(proxy); } catch (e) { return reject(new Error('UPDATE_PROXY 格式不对')); }
+      try { pu = new URL(proxy); } catch (e) { return reject(new Error('代理地址格式不对：' + proxy)); }
 
       const conn = http.request({
         host: pu.hostname,
@@ -949,8 +950,11 @@ function buildRunnerScript(stageRoot, targetVersion) {
     stage: stageRoot,
     port: PORT,
     host: HOST,
+    mode: MODE,
     from: VERSION,
-    to: targetVersion
+    to: targetVersion,
+    flag: process.env.PORTAL_UPDATE_FLAG || '',
+    supervised: !!process.env.PORTAL_SUPERVISED
   };
 
   return `/* 自动生成：等主进程退出后替换文件并重启 */
@@ -1037,13 +1041,32 @@ function replaceFiles() {
 
 function launch() {
   const out = fs.openSync(LOG, 'a');
-  const child = spawn(process.execPath, ['server.js'], {
+  const args = ['server.js', '--port', String(CFG.port), '--host', CFG.host, '--mode', CFG.mode];
+  const child = spawn(process.execPath, args, {
     cwd: CFG.root,
     detached: true,
     stdio: ['ignore', out, out],
     windowsHide: true
   });
   child.unref();
+}
+
+/* 结束：有人守着（启动器）就只留个标记，让它按原参数把服务端拉起来；
+   没人守（systemd 之类）就自己拉一个新进程。 */
+function finish(ok) {
+  if (CFG.flag) {
+    try {
+      fs.writeFileSync(CFG.flag, JSON.stringify({ stage: 'done', ok: ok, version: CFG.to }));
+    } catch (e) {}
+  }
+
+  if (CFG.supervised) {
+    log(ok ? '文件已替换，等启动器重启' : '更新失败，等启动器重启');
+    return;
+  }
+
+  launch();
+  log('已启动新进程，更新结束');
 }
 
 (async function () {
@@ -1060,8 +1083,7 @@ function launch() {
     replaceWithRetry();
     log('文件已替换');
 
-    launch();
-    log('已启动新进程，更新结束');
+    finish(true);
   } catch (err) {
     log('替换失败：' + err.message);
     if (backupDir) {
@@ -1077,7 +1099,7 @@ function launch() {
         log('已回滚到更新前的文件');
       } catch (e2) { log('回滚也失败了：' + e2.message); }
     }
-    launch();
+    finish(false);
   }
 })();
 `;
@@ -1489,7 +1511,14 @@ const server = http.createServer(function (req, res) {
         setTimeout(function () {
           try { persist(true); } catch (e) {}
 
-          const bootLog = path.join(DATA_DIR, 'update-boot.log');
+          // 告诉守着我们的启动器：这次退出是升级，换完文件请把我拉起来
+        const FLAG = process.env.PORTAL_UPDATE_FLAG || path.join(UPDATE_DIR, 'flag.json');
+        try {
+          fs.mkdirSync(path.dirname(FLAG), { recursive: true });
+          fs.writeFileSync(FLAG, JSON.stringify({ stage: 'pending', from: VERSION, to: r.version }));
+        } catch (e) {}
+
+        const bootLog = path.join(DATA_DIR, 'update-boot.log');
           let left = false;
           const leave = function () {
             if (left) return;

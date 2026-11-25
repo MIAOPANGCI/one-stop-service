@@ -31,6 +31,8 @@ let aboutWin = null;
 
 const prefs = {
   hideMenuBar: false,
+  /* 下载新版本走的 HTTP 代理，留空直连。GitHub 慢的时候填这个 */
+  updateProxy: '',
   /* 连哪个服务端。空 = 本机 127.0.0.1:8080。
      填了远端地址就纯当客户端用，本地不再存一份数据。 */
   serverUrl: ''
@@ -46,6 +48,7 @@ function loadPrefs() {
     if (raw && typeof raw === 'object') {
       if (typeof raw.hideMenuBar === 'boolean') prefs.hideMenuBar = raw.hideMenuBar;
       if (typeof raw.serverUrl === 'string') prefs.serverUrl = raw.serverUrl;
+      if (typeof raw.updateProxy === 'string') prefs.updateProxy = raw.updateProxy;
     }
   } catch (e) {}
 }
@@ -443,6 +446,7 @@ ipcMain.handle('portal:server-info', () => {
     configured: !!normalizeOrigin(prefs.serverUrl),
     local: !!origin && isLocalOrigin(origin),
     packaged: PACKAGED,
+    updateProxy: prefs.updateProxy || '',
     version: app.getVersion()
   };
 });
@@ -465,6 +469,17 @@ ipcMain.handle('portal:set-server', async (e, value) => {
 
   setTimeout(() => { app.relaunch(); app.exit(0); }, 300);
   return { ok: true, origin: url, restart: true };
+});
+
+/* 更新下载代理：空字符串 = 直连 */
+ipcMain.handle('portal:set-update-proxy', (e, value) => {
+  const v = String(value || '').trim();
+  if (v && !/^https?:\/\/[^\s]+$/i.test(v)) {
+    return { ok: false, error: '代理要写成 http://127.0.0.1:7897 这样' };
+  }
+  prefs.updateProxy = v;
+  savePrefs();
+  return { ok: true, updateProxy: v };
 });
 
 /* 连接设置窗口用 */
@@ -936,16 +951,57 @@ async function checkUpdate(manual) {
   if (ans.response === 0) downloadAndInstall(rel);
 }
 
-function downloadAndInstall(rel) {
+function normalizeProxy(v) {
+  let s = String(v || '').trim();
+  if (!s) return '';
+  if (!/^https?:\/\//i.test(s)) s = 'http://' + s;
+  return s.replace(/\/+$/, '');
+}
+
+/* 安装版还是便携版：两个附件都有就问一句，按当前运行方式给推荐 */
+function pickAsset(rel) {
   const assets = rel.assets || [];
-  const asset = assets.find((a) => /setup.*\.exe$/i.test(a.name)) ||
-                assets.find((a) => /\.exe$/i.test(a.name)) ||
-                null;
+  const setup = assets.find((a) => /setup.*\.exe$/i.test(a.name));
+  const portable = assets.find((a) => /portable.*\.exe$/i.test(a.name));
+
+  if (!setup && !portable) {
+    return assets.find((a) => /\.exe$/i.test(a.name)) || null;
+  }
+  if (!setup || !portable) return setup || portable;
+
+  const runningPortable = !!process.env.PORTABLE_EXECUTABLE_DIR;
+  const first = runningPortable ? portable : setup;
+  const second = runningPortable ? setup : portable;
+
+  const ans = msgBoxSync({
+    type: 'question',
+    message: '下载哪个版本？',
+    detail: '安装版：装到本机，带开始菜单和桌面快捷方式，适合长期用。\n' +
+      '便携版：单个 exe，放在哪都能跑，不写注册表。' +
+      (runningPortable ? '\n\n你现在用的就是便携版，建议继续用便携版。' : ''),
+    buttons: [
+      (first === setup ? '安装版' : '便携版') + '（推荐）',
+      (second === setup ? '安装版' : '便携版'),
+      '取消'
+    ],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true
+  });
+
+  if (ans === 2) return null;
+  return ans === 0 ? first : second;
+}
+
+function downloadAndInstall(rel) {
+  const asset = pickAsset(rel);
 
   if (!asset) {
-    shell.openExternal(rel.html_url);
+    if (!(rel.assets || []).some((a) => /\.exe$/i.test(a.name))) shell.openExternal(rel.html_url);
     return;
   }
+
+  const proxy = normalizeProxy(prefs.updateProxy || process.env.PORTAL_UPDATE_PROXY || '');
 
   const target = path.join(app.getPath('temp'), asset.name);
   let currentReq = null;
@@ -958,8 +1014,55 @@ function downloadAndInstall(rel) {
 
   dlSet(id, 0, '连接中…');
 
+  const openStream = (url, onRes) => {
+    const u = new URL(url);
+    const headers = { 'User-Agent': 'corp-portal-desktop' };
+
+    if (!proxy) {
+      return https.get(url, { headers: headers }, onRes);
+    }
+
+    // 走代理：先 CONNECT 一条隧道，再在这条 socket 上发 https 请求
+    const pu = new URL(proxy);
+    const conn = http.request({
+      host: pu.hostname,
+      port: pu.port || 80,
+      method: 'CONNECT',
+      path: u.hostname + ':443',
+      headers: { Host: u.hostname + ':443' }
+    });
+
+    conn.on('connect', (res, socket) => {
+      if (res.statusCode !== 200) {
+        socket.destroy();
+        currentReq = null;
+        dlFail('代理返回 ' + res.statusCode);
+        return;
+      }
+      const req = https.request({
+        host: u.hostname,
+        path: u.pathname + u.search,
+        headers: headers,
+        agent: false,
+        socket: socket,
+        servername: u.hostname
+      }, onRes);
+      req.on('error', (e) => dlFail('下载中断：' + e.message));
+      req.end();
+      currentReq = req;
+    });
+
+    conn.end();
+    return conn;
+  };
+
+  const dlFail = (msg) => {
+    dlFinish(id, 'err', msg);
+    msgBox({ type: 'error', message: '下载失败', detail: msg + '，请到发布页手动下载。' });
+  };
+
   const dl = (url, redirects) => {
-    const req = https.get(url, { headers: { 'User-Agent': 'corp-portal-desktop' } }, (res) => {
+    const req = openStream(url, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
         res.resume();
         return dl(res.headers.location, redirects - 1);

@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('desktopAPI', {
     return ipcRenderer.invoke('portal:set-server', String(url || ''));
   },
 
+  // 更新下载代理（空 = 直连）
+  setUpdateProxy(v) {
+    return ipcRenderer.invoke('portal:set-update-proxy', String(v || ''));
+  },
+
   // 连接设置窗口用
   probeServer(url) {
     return ipcRenderer.invoke('portal:probe-server', String(url || ''));
