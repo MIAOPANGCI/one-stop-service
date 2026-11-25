@@ -198,6 +198,115 @@
     });
   }
 
+  /* ---------------- 批量新增 ---------------- */
+  function openBatchModal() {
+    $('#b-list').value = '';
+    $('#b-password').value = '';
+    $('#b-role').value = 'viewer';
+    $('#bWarn').hidden = true;
+    paintBatchPreview();
+    openModal($('#batchModal'));
+    setTimeout(function () { $('#b-list').focus(); }, 80);
+  }
+
+  function parseBatch(text) {
+    return String(text || '').split(/\r?\n/)
+      .map(function (x) { return x.trim(); })
+      .filter(Boolean)
+      .map(function (line) {
+        var parts = line.split(/[\s,，、\t]+/).filter(Boolean);
+        return { username: parts[0] || '', name: parts.slice(1).join(' ') };
+      });
+  }
+
+  /* 先把解析结果摊开给用户看：空格既可能是分隔符也可能是姓名的一部分，
+     与其猜，不如让他一眼看到「账号 · 姓名」对不对 */
+  function paintBatchPreview() {
+    var rows = parseBatch($('#b-list').value);
+    var box = $('#b-preview');
+
+    if (!rows.length) { box.innerHTML = ''; return; }
+
+    var exists = {};
+    users.forEach(function (u) { exists[u.username.toLowerCase()] = 1; });
+
+    var dup = {};
+    var okCount = 0;
+
+    var html = rows.slice(0, 12).map(function (r) {
+      var bad = !/^[A-Za-z0-9._-]{2,40}$/.test(r.username);
+      var has = exists[String(r.username).toLowerCase()];
+      var same = dup[String(r.username).toLowerCase()];
+      if (!bad) dup[String(r.username).toLowerCase()] = 1;
+
+      var tag = '';
+      if (bad) tag = '<i class="bp-bad">格式不对</i>';
+      else if (has) tag = '<i class="bp-bad">已存在</i>';
+      else if (same) tag = '<i class="bp-bad">重复</i>';
+      else okCount++;
+
+      return '<span class="bp-item">' + esc(r.username || '（空）') +
+        (r.name ? '<em>' + esc(r.name) + '</em>' : '') + tag + '</span>';
+    }).join('');
+
+    box.innerHTML = '解析到 ' + rows.length + ' 行，可创建 <b>' + okCount + '</b> 个：' + html +
+      (rows.length > 12 ? '<span class="bp-item">…另外 ' + (rows.length - 12) + ' 个</span>' : '');
+  }
+
+  function saveBatch() {
+    if (busy) return;
+
+    var rows = parseBatch($('#b-list').value);
+    var password = $('#b-password').value;
+    var role = $('#b-role').value;
+
+    function fail(msg) {
+      var w = $('#bWarn');
+      w.textContent = msg;
+      w.hidden = false;
+    }
+
+    if (!rows.length) return fail('先粘贴账号，一行一个');
+    if (password.length < 6) return fail('统一密码至少 6 位');
+
+    $('#bWarn').hidden = true;
+
+    var btn = $('#batchSaveBtn');
+    busy = true;
+    btn.disabled = true;
+    btn.textContent = '创建中…';
+
+    api('POST', '/api/users/batch', {
+      list: rows.map(function (r) { return r.name ? r.username + ' ' + r.name : r.username; }).join('\n'),
+      password: password,
+      role: role
+    }).then(function (d) {
+      var made = (d.created || []).length;
+      var skip = d.skipped || [];
+
+      if (!made) {
+        fail('一个都没建成：' + skip.map(function (x) { return x.username + '（' + x.reason + '）'; }).join('、'));
+        return load();
+      }
+
+      closeModal($('#batchModal'));
+      toast('已创建 ' + made + ' 个账号' + (skip.length ? '，跳过 ' + skip.length + ' 个' : ''));
+      return load().then(function () {
+        if (skip.length) {
+          toast('创建 ' + made + ' 个，跳过：' +
+            skip.slice(0, 4).map(function (x) { return x.username + '（' + x.reason + '）'; }).join('、') +
+            (skip.length > 4 ? ' 等 ' + skip.length + ' 个' : ''));
+        }
+      });
+    }).catch(function (e) {
+      fail(e.message);
+    }).then(function () {
+      busy = false;
+      btn.disabled = false;
+      btn.textContent = '创建';
+    });
+  }
+
   function toggleEnabled(u) {
     api('PUT', '/api/users/' + encodeURIComponent(u.id), { enabled: !u.enabled })
       .then(function () {
@@ -249,6 +358,9 @@
     });
 
     $('#addUserBtn').addEventListener('click', function () { openUserModal(null); });
+    $('#batchUserBtn').addEventListener('click', openBatchModal);
+    $('#batchSaveBtn').addEventListener('click', saveBatch);
+    $('#b-list').addEventListener('input', paintBatchPreview);
     $('#saveUserBtn').addEventListener('click', save);
 
     document.addEventListener('click', function (e) {

@@ -1434,12 +1434,18 @@ const server = http.createServer(function (req, res) {
       if (!username || !password) return deny(400, '请输入账号和密码');
 
       const u = db.users.find(function (x) { return x.username.toLowerCase() === username.toLowerCase(); });
-      if (!u || !u.enabled || !verifyPassword(password, u.salt, u.hash)) {
+
+      if (!u || !verifyPassword(password, u.salt, u.hash)) {
         const cur = loginFails.get(ip) || { count: 0, until: 0 };
         cur.count += 1;
         if (cur.count >= 5) { cur.until = Date.now() + 5 * 60000; cur.count = 0; }
         loginFails.set(ip, cur);
         return deny(401, '账号或密码不正确');
+      }
+
+      // 密码是对的、只是被停用了：别让人以为是记错密码
+      if (!u.enabled) {
+        return deny(403, '账号「' + u.username + '」已被停用，请联系管理员重新启用');
       }
 
       loginFails.delete(ip);
@@ -1948,6 +1954,72 @@ const server = http.createServer(function (req, res) {
       persist();
       console.log('[用户] ' + user.username + ' 创建了 ' + username + '（' + role + '）');
       sendJson(res, 200, { ok: true, user: publicUser(u), users: db.users.map(publicUser), roles: ROLE_LABEL });
+    }).catch(function (e) { deny(400, e.message); });
+    return;
+  }
+
+  /* ---------- 批量新增用户 ---------- */
+  if (pathname === '/api/users/batch' && method === 'POST') {
+    if (!needRole(['admin'])) return;
+    readJson(req).then(function (body) {
+      const password = String(body.password || '');
+      const role = ROLES.indexOf(body.role) > -1 ? body.role : 'viewer';
+      const raw = Array.isArray(body.list) ? body.list.join('\n') : String(body.list || '');
+
+      if (password.length < 6) return deny(400, '统一密码至少 6 位');
+
+      const lines = raw.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+      if (!lines.length) return deny(400, '先粘贴账号，一行一个');
+      if (lines.length > 200) return deny(400, '一次最多 200 个账号');
+
+      const created = [];
+      const skipped = [];
+      const seen = {};
+
+      lines.forEach(function (line) {
+        // 「账号 姓名」/「账号,姓名」都认，姓名可以省略
+        const parts = line.split(/[\s,，、\t]+/).filter(Boolean);
+        const username = parts[0] || '';
+        const name = parts.slice(1).join(' ').slice(0, 30);
+
+        if (!/^[A-Za-z0-9._-]{2,40}$/.test(username)) {
+          skipped.push({ username: username, reason: '账号格式不对' });
+          return;
+        }
+
+        const key = username.toLowerCase();
+        if (seen[key]) { skipped.push({ username: username, reason: '同一批里重复' }); return; }
+        if (db.users.some(function (u) { return u.username.toLowerCase() === key; })) {
+          skipped.push({ username: username, reason: '已存在' });
+          return;
+        }
+        if (db.users.length >= MAX_USERS) {
+          skipped.push({ username: username, reason: '用户数量已达上限' });
+          return;
+        }
+
+        seen[key] = 1;
+        const h = hashPassword(password);
+        db.users.push({
+          id: uid('u'), username: username, name: name, role: role,
+          salt: h.salt, hash: h.hash, enabled: true,
+          createdAt: nowIso(), lastLoginAt: null, pwdChangedAt: null, theme: 'system'
+        });
+        created.push(username);
+      });
+
+      if (created.length) {
+        persist();
+        console.log('[用户] ' + user.username + ' 批量创建了 ' + created.length + ' 个账号（' + role + '）');
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        created: created,
+        skipped: skipped,
+        users: db.users.map(publicUser),
+        roles: ROLE_LABEL
+      });
     }).catch(function (e) { deny(400, e.message); });
     return;
   }

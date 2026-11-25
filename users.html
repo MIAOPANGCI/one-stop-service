@@ -39,6 +39,7 @@
     </div>
     <div class="page-tools">
       <input id="search" type="search" placeholder="搜索账号或姓名" autocomplete="off">
+      <button class="btn-line" id="batchUserBtn" type="button">批量新增</button>
       <button class="btn-primary" id="addUserBtn" type="button">＋ 新增用户</button>
     </div>
   </div>
@@ -100,6 +101,44 @@
       <div class="spacer"></div>
       <button class="btn-text" type="button" data-close>取消</button>
       <button class="btn-primary" id="saveUserBtn" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 批量新增弹窗 -->
+<div class="modal" id="batchModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true" style="max-width:520px">
+    <div class="modal-head">
+      <h3>批量新增用户</h3>
+      <button class="x" type="button" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <label class="field">
+        <span>账号列表 <b>*</b></span>
+        <textarea id="b-list" rows="8" placeholder="一行一个，账号后面可以跟姓名：&#10;zhangsan 张三&#10;lisi 李四&#10;wangwu"></textarea>
+        <small class="hint">账号可用字母、数字、点、下划线、短横线；姓名可省略。逗号、空格、制表符都能分隔。</small>
+        <p class="batch-preview" id="b-preview"></p>
+      </label>
+      <label class="field">
+        <span>统一密码 <b>*</b></span>
+        <input id="b-password" type="text" maxlength="64" placeholder="至少 6 位">
+        <small class="hint">先给所有人设同一个初始密码，让他们登录后自己改。</small>
+      </label>
+      <label class="field">
+        <span>角色</span>
+        <select id="b-role">
+          <option value="viewer">浏览者 · 只能查看和打开</option>
+          <option value="editor">编辑者 · 可增删改服务与设置</option>
+          <option value="admin">管理员 · 可管理用户与全部内容</option>
+        </select>
+      </label>
+      <p class="warn-line" id="bWarn" hidden></p>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn-text" type="button" data-close>取消</button>
+      <button class="btn-primary" id="batchSaveBtn" type="button">创建</button>
     </div>
   </div>
 </div>
