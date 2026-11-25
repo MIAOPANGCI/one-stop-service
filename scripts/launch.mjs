@@ -3,9 +3,10 @@
  * 一键启动：网页版 / 桌面客户端 / 两者
  *
  *   node scripts/launch.mjs          交互式菜单（start.bat 双击走这条）
- *   node scripts/launch.mjs web      仅网页版
- *   node scripts/launch.mjs desktop  仅桌面客户端
- *   node scripts/launch.mjs both     两者都启动
+ *   node scripts/launch.mjs web      仅网页版（服务端 + 浏览器）
+ *   node scripts/launch.mjs desktop  仅桌面客户端服务端（不打开客户端）
+ *   node scripts/launch.mjs both     服务端 + 浏览器 + 本机客户端
+ *   node scripts/launch.mjs client   只打开本机客户端，连已有的服务端
  *   node scripts/launch.mjs web --port 9000
  *
  * 三种方式共用一个服务端进程、一份 data —— 桌面客户端只是连过去的壳，
@@ -116,10 +117,18 @@ async function ensureServer(serverMode, openPage) {
   return proc;
 }
 
-function startClient() {
-  if (!fs.existsSync(path.join(ROOT, 'desktop', 'node_modules'))) {
-    console.error('\n  ✗ 桌面客户端依赖没装。先执行：cd desktop && npm install\n');
-    process.exit(1);
+function clientDepsReady() {
+  return fs.existsSync(path.join(ROOT, 'desktop', 'node_modules'));
+}
+
+/* 打开本机客户端。没装依赖不致命：别的机器上装好的客户端照样能连这个服务端 */
+function startClient(onExit) {
+  if (!clientDepsReady()) {
+    console.log('');
+    console.log('  ! 本机没装客户端依赖（cd desktop && npm install），这次不打开客户端');
+    console.log('    已经装好的「企业服务大厅」在别的机器上可以直接连这个服务端');
+    console.log('');
+    return null;
   }
 
   log('启动桌面客户端');
@@ -133,16 +142,81 @@ function startClient() {
       PORTAL_SERVER: 'http://127.0.0.1:' + PORT
     }
   });
-  proc.on('exit', (code) => process.exit(code || 0));
+
+  proc.on('exit', (code) => {
+    if (onExit) onExit(code);
+    else process.exit(code || 0);
+  });
+
+  return proc;
+}
+
+function waitExit(proc) {
+  return new Promise((resolve) => proc.on('exit', resolve));
+}
+
+/* 服务端是自己起的，就得有人守着：
+   这个进程一退，控制台一关，服务端跟着停。 */
+async function keepAlive(srv, hint) {
+  if (!srv) {
+    console.log('\n  服务端已经在别的窗口跑着，这边不用守着。');
+    return;
+  }
+  console.log('\n  ' + hint);
+  await waitExit(srv);
+}
+
+/* mode: web | desktop | both | client */
+async function run(mode, openPage) {
+  if (mode === 'client') {
+    log('只打开桌面客户端（连已有的服务端）');
+    if (!startClient()) process.exit(1);
+    return;
+  }
+
+  const srv = await ensureServer(mode, openPage);
+
+  if (mode === 'both') {
+    const client = startClient((code) => {
+      if (srv) { try { srv.kill(); } catch (e) {} }
+      process.exit(code || 0);
+    });
+
+    if (client) return;
+
+    await keepAlive(srv, '服务端在跑，这个窗口别关（关了服务就停）。关掉再按 Ctrl+C 结束。');
+    return;
+  }
+
+  await keepAlive(srv, '服务端在跑，这个窗口别关（关了服务就停）。按 Ctrl+C 结束。');
 }
 
 /* ---------------- 交互菜单 ---------------- */
 
+/* 一个菜单共用一个 readline；输入被重定向（管道、批处理）时先整段读进来，
+   否则第一问之后剩下的行会因为没人监听被丢掉 */
+let rl = null;
+let pipeLines = null;
+
 function ask(question) {
+  if (!process.stdin.isTTY) {
+    if (!pipeLines) {
+      try { pipeLines = fs.readFileSync(0, 'utf8').split(/\r?\n/).map((x) => x.trim()); }
+      catch (e) { pipeLines = []; }
+    }
+    const a = pipeLines.length ? pipeLines.shift() : '';
+    process.stdout.write(question + a + '\n');
+    return Promise.resolve(a);
+  }
+
+  if (!rl) rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(question, (ans) => { rl.close(); resolve(String(ans || '').trim()); });
+    rl.question(question, (ans) => resolve(String(ans || '').trim()));
   });
+}
+
+function closeAsk() {
+  if (rl) { try { rl.close(); } catch (e) {} rl = null; }
 }
 
 async function menu() {
@@ -151,37 +225,55 @@ async function menu() {
   console.log('    企业服务大厅 · 启动方式');
   console.log('  ============================================');
   console.log('');
-  console.log('    1  仅网页版        只开放浏览器访问，桌面客户端连不进来');
-  console.log('    2  仅桌面客户端    浏览器打开会被拒绝，只给客户端用');
-  console.log('    3  两者都启动      浏览器 + 桌面客户端，共用同一个服务端数据');
-  console.log('    4  自定义端口      换一个端口启动网页版');
+  console.log('    1  仅网页版            浏览器可访问，桌面客户端连不进来');
+  console.log('    2  仅桌面客户端服务端  只服务客户端（浏览器 403），不在这里开客户端');
+  console.log('    3  两者都启动          服务端 + 浏览器 + 本机客户端');
+  console.log('    4  只打开桌面客户端    连已有的服务端，不启动服务端');
+  console.log('    5  自定义端口          先填端口，再选模式');
   console.log('    q  退出');
   console.log('');
 
-  const ans = (await ask('  请选择 [1-4，默认 3]：') || '3').toLowerCase();
+  const ans = (await ask('  请选择 [1-5，默认 3]：') || '3').toLowerCase();
 
-  if (ans === 'q' || ans === 'quit' || ans === 'exit') return;
+  if (ans === 'q' || ans === 'quit' || ans === 'exit') { closeAsk(); return; }
 
-  if (ans === '4') {
-    const p = await ask('  端口号 [默认 ' + PORT + ']：');
-    PORT = resolvePort(p || PORT);
-    log('仅网页版（端口 ' + PORT + '）');
-    await ensureServer('web', true);
-    return;
+  if (ans === '1') {
+    log('仅网页版：浏览器可以访问，桌面客户端连不进来');
+    return run('web', true);
   }
 
-  if (ans === '2') { log('仅桌面客户端：浏览器打开会被拒绝'); await ensureServer('desktop', false); startClient(); return; }
-  if (ans === '1') { log('仅网页版：浏览器可以访问，桌面客户端连不进来'); await ensureServer('web', true); return; }
+  if (ans === '2') {
+    log('仅桌面客户端服务端：浏览器会被拒绝，这里不打开客户端');
+    return run('desktop', false);
+  }
 
-  log('网页版 + 桌面客户端');
-  await ensureServer('both', true);
-  startClient();
+  if (ans === '4') return run('client');
+
+  if (ans === '5') {
+    const p = await ask('  端口号 [默认 ' + PORT + ']：');
+    PORT = resolvePort(p || PORT);
+
+    const m = (await ask('  模式 [1 仅网页 / 2 仅桌面 / 3 两者，默认 3]：') || '3').trim();
+    const mode = m === '1' ? 'web' : m === '2' ? 'desktop' : 'both';
+
+    log('端口 ' + PORT + ' · ' + MODE_TEXT[mode]);
+    return run(mode, mode !== 'desktop');
+  }
+
+  if (ans === '3') {
+    log('网页版 + 桌面客户端');
+    return run('both', true);
+  }
+
+  log('没看懂「' + ans + '」，按「两者都启动」处理');
+  return run('both', true);
 }
 
 /* ---------------- 入口 ---------------- */
 
 const argv = process.argv.slice(2);
-const modeArg = argv.find((a) => !a.startsWith('-') && ['web', 'desktop', 'both'].includes(a.toLowerCase()));
+const modeArg = argv.find((a) => !a.startsWith('-') &&
+  ['web', 'desktop', 'both', 'client'].includes(a.toLowerCase()));
 const portIdx = argv.indexOf('--port');
 const portArg = portIdx > -1 ? argv[portIdx + 1] : '';
 
@@ -192,15 +284,15 @@ if (modeArg) {
 
   if (MODE === 'web') {
     log('仅网页版：浏览器可以访问，桌面客户端连不进来');
-    await ensureServer('web', true);
+    await run('web', true);
   } else if (MODE === 'desktop') {
-    log('仅桌面客户端：浏览器打开会被拒绝');
-    await ensureServer('desktop', false);
-    startClient();
+    log('仅桌面客户端服务端：浏览器会被拒绝，这里不打开客户端');
+    await run('desktop', false);
+  } else if (MODE === 'client') {
+    await run('client');
   } else {
     log('网页版 + 桌面客户端');
-    await ensureServer('both', true);
-    startClient();
+    await run('both', true);
   }
 } else {
   await menu();
