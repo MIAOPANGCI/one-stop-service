@@ -170,6 +170,7 @@
       applyType();
     }
     if (data && data.user !== undefined) authUser = data.user;
+    if (data && data.perms) perms = data.perms;
     if (data && data.roles) roles = data.roles;
     online = true;
     paintOffline(null);
@@ -187,12 +188,18 @@
     render();
   }
 
+  var perms = { users: false, links: false, settings: false };
+
   function canEdit() {
-    return online && authUser && (authUser.role === 'admin' || authUser.role === 'editor');
+    return online && !!authUser && (perms.links || perms.settings);
+  }
+
+  function canManageLinks() {
+    return online && !!authUser && !!perms.links;
   }
 
   function isAdmin() {
-    return online && authUser && authUser.role === 'admin';
+    return online && !!authUser && !!perms.users;
   }
 
   function loadState(silent) {
@@ -912,7 +919,7 @@
         (r.url ? '<i class="tile-dot ' + r.net + '"></i>' : '') +
       '</span>' +
       '<span class="tile-name">' + esc(l.name) + '</span>' +
-      (canEdit() && !sorting ? '<button class="tile-edit" type="button" data-act="edit" title="编辑">' + pen + '</button>' : '') +
+      (canManageLinks() && !sorting ? '<button class="tile-edit" type="button" data-act="edit" title="编辑">' + pen + '</button>' : '') +
     '</div>';
   }
 
@@ -925,7 +932,7 @@
     if (!list.length) {
       box.innerHTML = '';
       empty.hidden = false;
-      $('#emptyAddBtn').hidden = !canEdit();
+      $('#emptyAddBtn').hidden = !canManageLinks();
       if (!state.links.length) {
         $('#emptyTitle').textContent = online ? '这里还没有服务' : '读不到数据';
         $('#emptyHint').textContent = online
@@ -1048,12 +1055,11 @@
     $('#userAvatar').textContent = (name || '?').slice(0, 1).toUpperCase();
     $('#dropName').textContent = name;
     $('#dropRole').textContent = authUser.username + ' · ' + (roles[authUser.role] || authUser.role);
-    $('#usersItem').hidden = authUser.role !== 'admin';
+    $('#usersItem').hidden = !perms.users;
 
-    var ed = canEdit();
-    $('#addBtn').hidden = !ed;
-    $('#settingsBtn').hidden = !ed;
-    $('#sortBtn').hidden = !ed;
+    $('#addBtn').hidden = !canManageLinks();
+    $('#sortBtn').hidden = !canManageLinks();
+    $('#settingsBtn').hidden = !perms.settings;
   }
 
   /* ---------------- 排序（拖动） ---------------- */
@@ -1983,7 +1989,8 @@
               if (!res.ok || !res.d || !res.d.ok) throw new Error((res.d && res.d.error) || '导入失败');
               applyPayload(res.d);
               done('已导入 ' + res.d.imported + ' 个服务' +
-                (res.d.images ? '、' + res.d.images + ' 张图片' : ''));
+                (res.d.images ? '、' + res.d.images + ' 张图片' : '') +
+                (res.d.rolesImported ? '、' + res.d.rolesImported + ' 个角色' : ''));
               if (res.d.missing) {
                 setTimeout(function () { toast('有 ' + res.d.missing + ' 个图片不在包里，可能显示不出来'); }, 1900);
               }

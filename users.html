@@ -39,6 +39,7 @@
     </div>
     <div class="page-tools">
       <input id="search" type="search" placeholder="搜索账号或姓名" autocomplete="off">
+      <a class="btn-line" id="rolesLink" href="/roles.html" style="display:inline-flex;align-items:center;text-decoration:none">角色管理</a>
       <button class="btn-line" id="batchUserBtn" type="button">批量新增</button>
       <button class="btn-primary" id="addUserBtn" type="button">＋ 新增用户</button>
     </div>
@@ -84,11 +85,7 @@
       </label>
       <label class="field">
         <span>角色</span>
-        <select id="u-role">
-          <option value="admin">管理员 · 可管理用户与全部内容</option>
-          <option value="editor">编辑者 · 可增删改服务与设置</option>
-          <option value="viewer">浏览者 · 只能查看和打开</option>
-        </select>
+        <select id="u-role"></select>
       </label>
       <label class="field">
         <span id="pwdLabel">密码 <b>*</b></span>

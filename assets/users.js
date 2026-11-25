@@ -118,6 +118,11 @@
       users = d.users || [];
       me = d.me || null;
       roles = d.roles || roles;
+
+      var sel = $('#u-role');
+      sel.innerHTML = Object.keys(roles).map(function (id) {
+        return '<option value="' + esc(id) + '">' + esc(roles[id]) + '</option>';
+      }).join('');
       $('#meName').textContent = me ? (me.name || me.username) + ' · ' + (roles[me.role] || me.role) : '';
       render();
     }).catch(function (e) {

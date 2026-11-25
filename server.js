@@ -287,6 +287,88 @@ function sessionToken(req) {
   return parseCookies(req)[SESSION_COOKIE] || '';
 }
 
+/* ---------------- 角色与权限 ---------------- */
+
+function defaultRoles() {
+  return [
+    { id: 'admin',  name: '管理员', builtin: true, seeAll: true,
+      caps: { users: true,  links: true,  settings: true  }, links: [], cats: [] },
+    { id: 'editor', name: '编辑者', builtin: true, seeAll: true,
+      caps: { users: false, links: true,  settings: true  }, links: [], cats: [] },
+    { id: 'viewer', name: '浏览者', builtin: true, seeAll: true,
+      caps: { users: false, links: false, settings: false }, links: [], cats: [] }
+  ];
+}
+
+function ensureRoles() {
+  if (!Array.isArray(db.roles) || !db.roles.length) {
+    db.roles = defaultRoles();
+    return;
+  }
+
+  // 老数据缺字段时补齐，别让升级后取不到值
+  db.roles.forEach(function (r) {
+    if (!r.caps || typeof r.caps !== 'object') r.caps = { users: false, links: false, settings: false };
+    if (!Array.isArray(r.links)) r.links = [];
+    if (!Array.isArray(r.cats)) r.cats = [];
+    if (typeof r.seeAll !== 'boolean') r.seeAll = true;
+  });
+
+  // 三个内置角色必须在
+  defaultRoles().forEach(function (base) {
+    if (!db.roles.some(function (r) { return r.id === base.id; })) db.roles.unshift(base);
+  });
+}
+
+function roleOf(u) {
+  if (!u) return null;
+  return db.roles.find(function (r) { return r.id === u.role; }) || null;
+}
+
+function userCaps(u) {
+  const r = roleOf(u);
+  if (!r) return { users: false, links: false, settings: false };
+  if (r.id === 'admin') return { users: true, links: true, settings: true };
+  return {
+    users: !!r.caps.users,
+    links: !!r.caps.links,
+    settings: !!r.caps.settings
+  };
+}
+
+/* 能看到哪些服务：管理员看全部；给了「全部可见」看全部；否则按分类 + 单个服务授权 */
+function visibleLinks(u) {
+  if (!u) return [];
+  const r = roleOf(u);
+  if (!r || r.id === 'admin' || r.seeAll) return db.links;
+
+  const ids = {};
+  (r.links || []).forEach(function (id) { ids[id] = 1; });
+
+  const cats = {};
+  (r.cats || []).forEach(function (c) { cats[c] = 1; });
+
+  return db.links.filter(function (l) {
+    return ids[l.id] || cats[(l.cat || '未分类').trim()];
+  });
+}
+
+function roleLabels() {
+  const out = {};
+  db.roles.forEach(function (r) { out[r.id] = r.name; });
+  return out;
+}
+
+function publicRole(r) {
+  return {
+    id: r.id, name: r.name, builtin: !!r.builtin,
+    seeAll: r.seeAll !== false,
+    caps: { users: !!r.caps.users, links: !!r.caps.links, settings: !!r.caps.settings },
+    links: r.links || [], cats: r.cats || [],
+    users: db.users.filter(function (u) { return u.role === r.id; }).length
+  };
+}
+
 function publicUser(u) {
   return {
     id: u.id, username: u.username, name: u.name || '', role: u.role,
@@ -445,6 +527,8 @@ function loadDb() {
     firstRun = true;
     persist(true);
   }
+
+  ensureRoles();
 
   if (firstRun) {
     console.log('');
@@ -1337,7 +1421,7 @@ function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === '/' || rel === '') rel = '/index.html';
 
-  const allowed = /^\/(index\.html|login\.html|users\.html|favicon\.ico)$/.test(rel) ||
+  const allowed = /^\/(index\.html|login\.html|users\.html|roles\.html|favicon\.ico)$/.test(rel) ||
     /^\/assets\/[A-Za-z0-9._\-\/]+$/.test(rel);
   if (!allowed) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404 Not Found');
@@ -1441,9 +1525,16 @@ const server = http.createServer(function (req, res) {
   const statePayload = function () {
     return {
       ok: true,
-      state: { settings: db.settings, links: db.links, version: VERSION, lan: lanUrls(), mode: MODE },
+      state: {
+        settings: db.settings,
+        links: visibleLinks(user),
+        version: VERSION,
+        lan: lanUrls(),
+        mode: MODE
+      },
       user: user ? publicUser(user) : null,
-      roles: ROLE_LABEL
+      perms: user ? userCaps(user) : { users: false, links: false, settings: false },
+      roles: roleLabels()
     };
   };
 
@@ -1510,7 +1601,9 @@ const server = http.createServer(function (req, res) {
       sendJson(res, 200, {
         ok: true, remember: remember,
         user: publicUser(u),
-        state: { settings: db.settings, links: db.links }
+        perms: userCaps(u),
+        roles: roleLabels(),
+        state: { settings: db.settings, links: visibleLinks(u), version: VERSION, lan: lanUrls(), mode: MODE }
       });
     }).catch(function (e) { deny(400, e.message); });
     return;
@@ -1619,7 +1712,12 @@ const server = http.createServer(function (req, res) {
 
   if (pathname === '/api/me' && method === 'GET') {
     if (!user) return deny(401, '未登录');
-    sendJson(res, 200, { ok: true, user: publicUser(user) });
+    sendJson(res, 200, {
+      ok: true,
+      user: publicUser(user),
+      perms: userCaps(user),
+      roles: roleLabels()
+    });
     return;
   }
 
@@ -1667,6 +1765,13 @@ const server = http.createServer(function (req, res) {
   }
 
   /* ---------- 以下写操作都需要权限 ---------- */
+  /* 按能力判断：users 管用户 / links 管服务 / settings 改设置 */
+  function needCap(cap) {
+    if (!user) { deny(401, '请先登录'); return false; }
+    if (!userCaps(user)[cap]) { deny(403, '当前角色没有这个操作权限'); return false; }
+    return true;
+  }
+
   function needRole(roles) {
     if (!user) { deny(401, '请先登录'); return false; }
     if (roles && roles.indexOf(user.role) < 0) { deny(403, '没有权限执行此操作'); return false; }
@@ -1675,7 +1780,7 @@ const server = http.createServer(function (req, res) {
 
   /* ---------- 上传图片（原始二进制，不走 multipart） ---------- */
   if (pathname === '/api/upload' && method === 'POST') {
-    if (!needRole(['admin', 'editor'])) return;
+    if (!needCap('links')) return;
 
     const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
     const ext = UPLOAD_TYPES[type];
@@ -1723,7 +1828,7 @@ const server = http.createServer(function (req, res) {
 
   /* ---------- 设置 ---------- */
   if (pathname === '/api/settings' && method === 'PUT') {
-    if (!needRole(['admin', 'editor'])) return;
+    if (!needCap('settings')) return;
     readJson(req).then(function (body) {
       const s = db.settings;
       if ('company' in body) s.company = cleanText(body.company, 24) || '企业门户';
@@ -1772,7 +1877,7 @@ const server = http.createServer(function (req, res) {
 
   /* ---------- 新增链接 ---------- */
   if (pathname === '/api/links' && method === 'POST') {
-    if (!needRole(['admin', 'editor'])) return;
+    if (!needCap('links')) return;
     readJson(req).then(function (body) {
       const link = sanitizeLink(body, { id: uid(), createdAt: nowIso(), cat: '未分类' });
       const err = validateLink(link);
@@ -1787,7 +1892,7 @@ const server = http.createServer(function (req, res) {
 
   /* ---------- 排序 ---------- */
   if (pathname === '/api/links/order' && method === 'POST') {
-    if (!needRole(['admin', 'editor'])) return;
+    if (!needCap('links')) return;
     readJson(req).then(function (body) {
       const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
       const map = {};
@@ -1810,7 +1915,7 @@ const server = http.createServer(function (req, res) {
     if (idx < 0) { deny(404, '未找到该服务'); return; }
 
     if (method === 'PUT') {
-      if (!needRole(['admin', 'editor'])) return;
+      if (!needCap('links')) return;
       readJson(req).then(function (body) {
         const link = sanitizeLink(body, db.links[idx]);
         const err = validateLink(link);
@@ -1824,7 +1929,7 @@ const server = http.createServer(function (req, res) {
     }
 
     if (method === 'DELETE') {
-      if (!needRole(['admin', 'editor'])) return;
+      if (!needCap('links')) return;
       db.links.splice(idx, 1);
       persist();
       sendJson(res, 200, statePayload());
@@ -1834,7 +1939,7 @@ const server = http.createServer(function (req, res) {
 
   /* ---------- 导出（打包成 zip，带上正在用的图片） ---------- */
   if (pathname === '/api/export' && method === 'GET') {
-    if (!needRole(['admin', 'editor'])) return;
+    if (!needCap('links')) return;
 
     const clone = JSON.parse(JSON.stringify(db));
     clone.users = clone.users.map(publicUser);   // 绝不导出密码哈希
@@ -1858,7 +1963,8 @@ const server = http.createServer(function (req, res) {
 
     const zip = zipStore(files);
     const d = new Date();
-    const fname = 'portal-backup-' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '.zip';
+    const fname = 'portal-backup-' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) +
+      '-' + pad2(d.getHours()) + pad2(d.getMinutes()) + '.zip';
 
     res.writeHead(200, {
       'Content-Type': 'application/zip',
@@ -1872,7 +1978,7 @@ const server = http.createServer(function (req, res) {
 
   /* ---------- 导入（支持本次导出的 zip，也兼容老的 json） ---------- */
   if (pathname === '/api/import' && method === 'POST') {
-    if (!needRole(['admin', 'editor'])) return;
+    if (!needCap('links')) return;
 
     readBody(req, 64 * 1024 * 1024).then(function (buf) {
       const isZip = buf.length > 4 && buf.readUInt32LE(0) === 0x04034b50;
@@ -1925,6 +2031,48 @@ const server = http.createServer(function (req, res) {
       });
 
       db.links = links;
+
+      // 服务换了，角色里指向旧服务的 id 要修掉，否则点开是空的
+      const idSet = {};
+      links.forEach(function (l) { idSet[l.id] = 1; });
+
+      let roleCount = 0;
+
+      if (Array.isArray(payload.roles)) {
+        payload.roles.forEach(function (raw) {
+          if (!raw || !raw.id) return;
+          if (['admin', 'editor', 'viewer'].indexOf(String(raw.id)) > -1) return;
+
+          const name = cleanText(raw.name, 12);
+          if (!name) return;
+
+          let role = db.roles.filter(function (r) { return r.id === String(raw.id); })[0] ||
+            db.roles.filter(function (r) { return !r.builtin && r.name === name; })[0];
+
+          if (!role) {
+            role = { id: String(raw.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || ('r_' + uid()), name: name, builtin: false };
+            db.roles.push(role);
+            roleCount++;
+          }
+
+          role.name = name;
+          role.seeAll = raw.seeAll !== false;
+          role.caps = {
+            users: !!(raw.caps && raw.caps.users),
+            links: !!(raw.caps && raw.caps.links),
+            settings: !!(raw.caps && raw.caps.settings)
+          };
+          role.links = Array.isArray(raw.links) ? raw.links.map(String).filter(function (id) { return idSet[id]; }) : [];
+          role.cats = Array.isArray(raw.cats) ? raw.cats.map(String) : [];
+        });
+      }
+
+      // 现有角色也修剪一遍
+      db.roles.forEach(function (r) {
+        if (r.id === 'admin' || r.seeAll !== false) return;
+        r.links = (r.links || []).filter(function (id) { return idSet[id]; });
+      });
+
       if (payload.settings) {
         const s = db.settings;
         if (payload.settings.company) s.company = cleanText(payload.settings.company, 24);
@@ -1969,36 +2117,141 @@ const server = http.createServer(function (req, res) {
       });
 
       console.log('[数据] ' + (user ? user.username : '-') + ' 导入了 ' + links.length +
-        ' 条服务，' + images + ' 张图片');
+        ' 条服务、' + images + ' 张图片、' + roleCount + ' 个角色');
 
       const out = statePayload();
       out.imported = links.length;
       out.images = images;
       out.missing = missing;
+      out.rolesImported = roleCount;
       sendJson(res, 200, out);
     }).catch(function (e) { deny(400, e.message); });
     return;
   }
   /* ==================== 用户管理（仅管理员） ==================== */
 
+  /* ---------- 角色 ---------- */
+  if (pathname === '/api/roles' && method === 'GET') {
+    if (!needCap('users')) return;
+
+    const cats = [];
+    db.links.forEach(function (l) {
+      const c = (l.cat || '未分类').trim();
+      if (cats.indexOf(c) === -1) cats.push(c);
+    });
+
+    sendJson(res, 200, {
+      ok: true,
+      roles: db.roles.map(publicRole),
+      links: db.links.map(function (l) { return { id: l.id, name: l.name, cat: (l.cat || '未分类').trim() }; }),
+      cats: cats
+    });
+    return;
+  }
+
+  if (pathname === '/api/roles' && method === 'POST') {
+    if (!needCap('users')) return;
+    readJson(req).then(function (body) {
+      const name = cleanText(body.name, 12);
+      if (!name) return deny(400, '角色名称不能为空');
+      if (db.roles.some(function (r) { return r.name === name; })) return deny(400, '已经有同名角色了');
+
+      const role = {
+        id: 'r_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+        name: name,
+        builtin: false,
+        seeAll: body.seeAll !== false,
+        caps: {
+          users: !!body.caps && !!body.caps.users,
+          links: !!body.caps && !!body.caps.links,
+          settings: !!body.caps && !!body.caps.settings
+        },
+        links: Array.isArray(body.links) ? body.links.map(String) : [],
+        cats: Array.isArray(body.cats) ? body.cats.map(String) : []
+      };
+
+      db.roles.push(role);
+      persist();
+      console.log('[角色] ' + user.username + ' 创建了角色 ' + name);
+      sendJson(res, 200, { ok: true, roles: db.roles.map(publicRole), roles2: roleLabels() });
+    }).catch(function (e) { deny(400, e.message); });
+    return;
+  }
+
+  const rm = pathname.match(/^\/api\/roles\/([A-Za-z0-9_-]+)$/);
+  if (rm) {
+    if (!needCap('users')) return;
+
+    const target = db.roles.find(function (r) { return r.id === rm[1]; });
+    if (!target) { deny(404, '未找到该角色'); return; }
+
+    if (method === 'PUT') {
+      readJson(req).then(function (body) {
+        if ('name' in body) {
+          const name = cleanText(body.name, 12);
+          if (name) {
+            if (db.roles.some(function (r) { return r.name === name && r.id !== target.id; })) {
+              return deny(400, '已经有同名角色了');
+            }
+            target.name = name;
+          }
+        }
+
+        if ('caps' in body && body.caps) {
+          target.caps = {
+            users: !!body.caps.users,
+            links: !!body.caps.links,
+            settings: !!body.caps.settings
+          };
+        }
+
+        if ('seeAll' in body) target.seeAll = body.seeAll !== false;
+
+        if (Array.isArray(body.links)) target.links = body.links.map(String);
+        if (Array.isArray(body.cats)) target.cats = body.cats.map(String);
+
+        // 管理员不能被削权，否则没人能进后台
+        if (target.id === 'admin') {
+          target.caps = { users: true, links: true, settings: true };
+          target.seeAll = true;
+        }
+
+        persist();
+        sendJson(res, 200, { ok: true, roles: db.roles.map(publicRole), roles2: roleLabels() });
+      }).catch(function (e) { deny(400, e.message); });
+      return;
+    }
+
+    if (method === 'DELETE') {
+      if (target.builtin) return deny(400, '内置角色不能删除');
+      if (db.users.some(function (u) { return u.role === target.id; })) {
+        return deny(400, '还有用户在用这个角色，先把他们换成别的角色');
+      }
+      db.roles = db.roles.filter(function (r) { return r.id !== target.id; });
+      persist();
+      sendJson(res, 200, { ok: true, roles: db.roles.map(publicRole), roles2: roleLabels() });
+      return;
+    }
+  }
+
   if (pathname === '/api/users' && method === 'GET') {
-    if (!needRole(['admin'])) return;
+    if (!needCap('users')) return;
     sendJson(res, 200, {
       ok: true,
       users: db.users.map(publicUser),
-      roles: ROLE_LABEL,
+      roles: roleLabels(),
       me: publicUser(user)
     });
     return;
   }
 
   if (pathname === '/api/users' && method === 'POST') {
-    if (!needRole(['admin'])) return;
+    if (!needCap('users')) return;
     readJson(req).then(function (body) {
       const username = cleanText(body.username, 40);
       const name = cleanText(body.name, 30);
       const password = String(body.password || '');
-      const role = ROLES.indexOf(body.role) > -1 ? body.role : 'viewer';
+      const role = db.roles.some(function (r) { return r.id === body.role; }) ? body.role : 'viewer';
 
       if (!/^[A-Za-z0-9._-]{2,40}$/.test(username)) return deny(400, '账号只能包含字母、数字、点、下划线、短横线，2-40 位');
       if (password.length < 6) return deny(400, '密码至少 6 位');
@@ -2016,14 +2269,14 @@ const server = http.createServer(function (req, res) {
       db.users.push(u);
       persist();
       console.log('[用户] ' + user.username + ' 创建了 ' + username + '（' + role + '）');
-      sendJson(res, 200, { ok: true, user: publicUser(u), users: db.users.map(publicUser), roles: ROLE_LABEL });
+      sendJson(res, 200, { ok: true, user: publicUser(u), users: db.users.map(publicUser), roles: roleLabels() });
     }).catch(function (e) { deny(400, e.message); });
     return;
   }
 
   /* ---------- 批量新增用户 ---------- */
   if (pathname === '/api/users/batch' && method === 'POST') {
-    if (!needRole(['admin'])) return;
+    if (!needCap('users')) return;
     readJson(req).then(function (body) {
       const password = String(body.password || '');
       const role = ROLES.indexOf(body.role) > -1 ? body.role : 'viewer';
@@ -2081,7 +2334,7 @@ const server = http.createServer(function (req, res) {
         created: created,
         skipped: skipped,
         users: db.users.map(publicUser),
-        roles: ROLE_LABEL
+        roles: roleLabels()
       });
     }).catch(function (e) { deny(400, e.message); });
     return;
@@ -2089,7 +2342,7 @@ const server = http.createServer(function (req, res) {
 
   const um = pathname.match(/^\/api\/users\/([A-Za-z0-9_-]+)$/);
   if (um) {
-    if (!needRole(['admin'])) return;
+    if (!needCap('users')) return;
     const target = db.users.find(function (u) { return u.id === um[1]; });
     if (!target) { deny(404, '未找到该用户'); return; }
 
@@ -2100,7 +2353,7 @@ const server = http.createServer(function (req, res) {
         if ('name' in body) target.name = cleanText(body.name, 30);
 
         if ('role' in body) {
-          const role = ROLES.indexOf(body.role) > -1 ? body.role : target.role;
+          const role = db.roles.some(function (r) { return r.id === body.role; }) ? body.role : target.role;
           if (target.role === 'admin' && role !== 'admin' && adminCount <= 1) {
             return deny(400, '至少需要保留一名管理员');
           }
@@ -2118,7 +2371,7 @@ const server = http.createServer(function (req, res) {
         }
 
         persist();
-        sendJson(res, 200, { ok: true, users: db.users.map(publicUser), roles: ROLE_LABEL });
+        sendJson(res, 200, { ok: true, users: db.users.map(publicUser), roles: roleLabels() });
       }).catch(function (e) { deny(400, e.message); });
       return;
     }
@@ -2132,14 +2385,14 @@ const server = http.createServer(function (req, res) {
       dropUserSessions(target.id);
       persist();
       console.log('[用户] ' + user.username + ' 删除了 ' + target.username);
-      sendJson(res, 200, { ok: true, users: db.users.map(publicUser), roles: ROLE_LABEL });
+      sendJson(res, 200, { ok: true, users: db.users.map(publicUser), roles: roleLabels() });
       return;
     }
   }
 
   const pm = pathname.match(/^\/api\/users\/([A-Za-z0-9_-]+)\/password$/);
   if (pm && method === 'POST') {
-    if (!needRole(['admin'])) return;
+    if (!needCap('users')) return;
     const target = db.users.find(function (u) { return u.id === pm[1]; });
     if (!target) { deny(404, '未找到该用户'); return; }
 
