@@ -71,13 +71,13 @@
     $('#tbody').innerHTML = roles.map(function (r) {
       return '<tr data-id="' + esc(r.id) + '">' +
         '<td><div class="ucell"><span class="role role-' + (r.builtin ? esc(r.id) : 'custom') + '">' +
-          esc(r.name) + '</span>' + (r.builtin ? '<i class="u-me">内置</i>' : '') + '</div></td>' +
+          esc(r.name) + '</span>' + (r.id === 'admin' ? '<i class="u-me">内置</i>' : '') + '</div></td>' +
         '<td class="muted">' + esc(capText(r)) + '</td>' +
         '<td class="muted">' + visText(r) + '</td>' +
         '<td class="muted">' + r.users + ' 人</td>' +
         '<td class="ta-r">' +
           '<button class="link-btn" type="button" data-act="edit">编辑</button>' +
-          (r.builtin ? '' : '<button class="link-btn danger" type="button" data-act="del">删除</button>') +
+          (r.id === 'admin' ? '' : '<button class="link-btn danger" type="button" data-act="del">删除</button>') +
         '</td>' +
       '</tr>';
     }).join('');
@@ -133,7 +133,7 @@
     $('#modalTitle').textContent = role ? ('编辑角色 · ' + role.name) : '新增角色';
 
     $('#r-name').value = role ? role.name : '';
-    $('#r-name').disabled = !!(role && role.builtin);
+    $('#r-name').disabled = !!(role && role.id === 'admin');
 
     $('#c-links').checked = !!(role && role.caps.links);
     $('#c-settings').checked = !!(role && role.caps.settings);
@@ -143,8 +143,10 @@
     if (role && role.id === 'admin') seeAll = true;
     document.querySelector('input[name="seeAll"][value="' + (seeAll ? '1' : '0') + '"]').checked = true;
 
-    [$('#c-links'), $('#c-settings'), $('#c-users')].forEach(function (el) {
-      el.disabled = !!(role && role.id === 'admin');
+    var locked = !!(role && role.id === 'admin');
+    [$('#c-links'), $('#c-settings'), $('#c-users')].forEach(function (el) { el.disabled = locked; });
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="seeAll"]'), function (el) {
+      el.disabled = locked;
     });
 
     buildVisBox(role);

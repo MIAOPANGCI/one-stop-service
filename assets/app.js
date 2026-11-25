@@ -946,13 +946,15 @@
     }
     empty.hidden = true;
 
-    // 按分类分组，保持原始出现顺序
+    // 按分类分组，分类顺序跟 settings.catOrder 走
     var order = [], map = {};
     list.forEach(function (l) {
       var c = (l.cat || '未分类').trim();
       if (!map[c]) { map[c] = []; order.push(c); }
       map[c].push(l);
     });
+
+    order = sortCatNames(order);
 
     box.innerHTML = order.map(function (cat) {
       var arr = map[cat];

@@ -289,13 +289,15 @@ function sessionToken(req) {
 
 /* ---------------- 角色与权限 ---------------- */
 
+/* 内置角色只有管理员：名字、权限、可见范围都锁死，也不允许删。
+   编辑者 / 浏览者只是「预设」，跟自定义角色一样能改能删。 */
 function defaultRoles() {
   return [
     { id: 'admin',  name: '管理员', builtin: true, seeAll: true,
       caps: { users: true,  links: true,  settings: true  }, links: [], cats: [] },
-    { id: 'editor', name: '编辑者', builtin: true, seeAll: true,
+    { id: 'editor', name: '编辑者', builtin: false, seeAll: true,
       caps: { users: false, links: true,  settings: true  }, links: [], cats: [] },
-    { id: 'viewer', name: '浏览者', builtin: true, seeAll: true,
+    { id: 'viewer', name: '浏览者', builtin: false, seeAll: true,
       caps: { users: false, links: false, settings: false }, links: [], cats: [] }
   ];
 }
@@ -314,9 +316,21 @@ function ensureRoles() {
     if (typeof r.seeAll !== 'boolean') r.seeAll = true;
   });
 
-  // 三个内置角色必须在
+  // 缺哪个预设就补哪个（用户可能已经把编辑者/浏览者删掉了，那就别硬塞回来）
   defaultRoles().forEach(function (base) {
-    if (!db.roles.some(function (r) { return r.id === base.id; })) db.roles.unshift(base);
+    if (base.id === 'admin' && !db.roles.some(function (r) { return r.id === 'admin'; })) {
+      db.roles.unshift(base);
+    }
+  });
+
+  // 老版本把三个都标成了内置，这里只认管理员
+  db.roles.forEach(function (r) {
+    r.builtin = r.id === 'admin';
+    if (r.builtin) {
+      r.name = '管理员';
+      r.caps = { users: true, links: true, settings: true };
+      r.seeAll = true;
+    }
   });
 }
 
@@ -2041,7 +2055,7 @@ const server = http.createServer(function (req, res) {
       if (Array.isArray(payload.roles)) {
         payload.roles.forEach(function (raw) {
           if (!raw || !raw.id) return;
-          if (['admin', 'editor', 'viewer'].indexOf(String(raw.id)) > -1) return;
+          if (String(raw.id) === 'admin') return;
 
           const name = cleanText(raw.name, 12);
           if (!name) return;
@@ -2185,6 +2199,10 @@ const server = http.createServer(function (req, res) {
     const target = db.roles.find(function (r) { return r.id === rm[1]; });
     if (!target) { deny(404, '未找到该角色'); return; }
 
+    if (target.id === 'admin' && method !== 'GET') {
+      return deny(400, '内置的管理员角色不能编辑，也不能删除');
+    }
+
     if (method === 'PUT') {
       readJson(req).then(function (body) {
         if ('name' in body) {
@@ -2251,7 +2269,10 @@ const server = http.createServer(function (req, res) {
       const username = cleanText(body.username, 40);
       const name = cleanText(body.name, 30);
       const password = String(body.password || '');
-      const role = db.roles.some(function (r) { return r.id === body.role; }) ? body.role : 'viewer';
+      const fallbackRole = db.roles.some(function (r) { return r.id === 'viewer'; })
+        ? 'viewer'
+        : (db.roles[0] ? db.roles[0].id : 'viewer');
+      const role = db.roles.some(function (r) { return r.id === body.role; }) ? body.role : fallbackRole;
 
       if (!/^[A-Za-z0-9._-]{2,40}$/.test(username)) return deny(400, '账号只能包含字母、数字、点、下划线、短横线，2-40 位');
       if (password.length < 6) return deny(400, '密码至少 6 位');
