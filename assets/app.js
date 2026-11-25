@@ -1340,10 +1340,9 @@
     window.desktopAPI.getServerInfo().then(function (info) {
       if (!$('#s-server')) return;
       $('#s-server').value = info.configured ? info.origin : '';
-      $('#serverNow').textContent = '当前 ' + info.origin +
-        (info.local
-          ? ('（本机服务端，数据目录 ' + info.dataDir + '）')
-          : '（远端服务端，数据在对方机器上）');
+      $('#serverNow').textContent = !info.origin
+        ? '还没连接服务端'
+        : ('当前 ' + info.origin + (info.local ? '（本机）' : '（远端，数据在对方机器上）'));
     }).catch(function () {});
   }
 
@@ -2357,18 +2356,25 @@
 
       $('#serverSaveBtn').addEventListener('click', function () {
         var v = $('#s-server').value.trim();
-        window.desktopAPI.setServer(v).then(function () {
-          askConfirm({
-            title: '服务端地址已保存',
-            text: '改成了 ' + (v || '本机默认 127.0.0.1') + '，重启客户端后生效。',
-            okText: '立即重启',
-            cancelText: '稍后',
-            kind: 'info'
-          }).then(function (yes) {
-            if (yes) window.desktopAPI.relaunch();
-            else loadServerInfo();
-          });
-        }).catch(function () { toast('保存失败'); });
+        var btn = this;
+
+        // 主进程会先验证能不能连上，存好了自己重启；连不上就把原因带回来
+        btn.disabled = true;
+        btn.textContent = '连接中…';
+
+        window.desktopAPI.setServer(v).then(function (r) {
+          if (!r || !r.ok) {
+            toast((r && r.error) || '保存失败');
+            btn.disabled = false;
+            btn.textContent = '保存';
+            return;
+          }
+          toast('已连接，正在重启客户端…');
+        }).catch(function () {
+          toast('保存失败');
+          btn.disabled = false;
+          btn.textContent = '保存';
+        });
       });
     }
 

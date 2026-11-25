@@ -6,8 +6,8 @@
  *   2. 主进程拦截 guest 的 window.open，转成应用内页签
  *   3. guest preload 覆盖 parent 指向，绕开 "读父页面属性" 的同源报错
  *
- * 打包后：后端放在 resources/app-root，数据写到 %APPDATA%/<app>/data。
- * 未打包：直接复用仓库根目录的 server.js 和 data/。
+ * 它只是壳：不启动、也不携带后端。第一次打开必须先填服务端地址，
+ * 之后所有数据都来自那个服务端，和网页版共用同一份。
  */
 
 const { app, BrowserWindow, Menu, dialog, shell, session, ipcMain, Notification } = require('electron');
@@ -18,14 +18,14 @@ const https = require('https');
 const { spawn } = require('child_process');
 
 const PACKAGED = app.isPackaged;
-const APP_ROOT = PACKAGED ? path.join(process.resourcesPath, 'app-root') : path.resolve(__dirname, '..');
-const PORT = Number(process.env.PORT) || 8080;
+/* 只是输入框里的建议值，不代表默认就会连它 */
+const SUGGEST_ORIGIN = 'http://127.0.0.1:' + (Number(process.env.PORT) || 8080);
 const DEV = process.argv.includes('--dev');
 const REPO = 'MIAOPANGCI/one-stop-service';
 
 let win = null;
+let setupWin = null;
 let aboutWin = null;
-let serverProc = null;
 
 /* ---------------- 本地偏好（菜单栏显隐这类） ---------------- */
 
@@ -60,14 +60,6 @@ function savePrefs() {
 
 /* ---------------- 路径 ---------------- */
 
-function dataDir() {
-  return PACKAGED ? path.join(app.getPath('userData'), 'data') : path.join(APP_ROOT, 'data');
-}
-
-function configPath() {
-  return PACKAGED ? path.join(app.getPath('userData'), 'config.json') : path.join(APP_ROOT, 'config.json');
-}
-
 function iconPath() {
   const p = path.join(__dirname, 'build', 'icon.png');
   return fs.existsSync(p) ? p : undefined;
@@ -82,43 +74,31 @@ function normalizeOrigin(v) {
   return s.replace(/\/+$/, '');
 }
 
-/* 优先级：环境变量 > prefs > 本机默认 */
+/* 只认用户填的（或环境变量给的）。客户端自己不起服务，所以没有默认值。 */
 function serverOrigin() {
-  return normalizeOrigin(process.env.PORTAL_SERVER) ||
-    normalizeOrigin(prefs.serverUrl) ||
-    ('http://127.0.0.1:' + PORT);
+  return normalizeOrigin(process.env.PORTAL_SERVER) || normalizeOrigin(prefs.serverUrl) || '';
 }
 
 function isLocalOrigin(origin) {
   return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(origin);
 }
 
-function originPort(origin) {
-  try {
-    const u = new URL(origin);
-    if (u.port) return Number(u.port);
-    return u.protocol === 'https:' ? 443 : 80;
-  } catch (e) {
-    return PORT;
-  }
-}
-
-/* ---------------- 后端 ---------------- */
-
 /* 探测时带上桌面客户端 UA：服务端 --mode desktop 会据此放行。
-   返回 'ok' / 'web-only'（服务端在，只开了网页版）/ 'none'（啥也没有）。 */
-function probe(origin) {
+   返回 { state: 'ok' | 'web-only' | 'offline', mode, version, status } */
+function probeInfo(origin) {
   return new Promise((resolve) => {
-    let done = false;
-    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const offline = (status) => resolve({ state: 'offline', status: status || 0 });
 
     let target;
     try { target = new URL('/api/ping', origin || serverOrigin()); }
-    catch (e) { return finish('none'); }
+    catch (e) { return offline(0); }
+    if (!target.host) return offline(0);
 
     const mod = target.protocol === 'https:' ? https : http;
     const req = mod.get(target, {
-      timeout: 1200,
+      timeout: 2500,
+      // 内网自签证书很常见，别因为这个连不上
+      rejectUnauthorized: false,
       headers: { 'User-Agent': 'CorpPortalDesktop/' + app.getVersion() }
     }, (res) => {
       let body = '';
@@ -128,66 +108,95 @@ function probe(origin) {
         let d = null;
         try { d = JSON.parse(body); } catch (e) {}
 
-        if (res.statusCode === 200 && d && d.name === 'corp-portal') return finish('ok');
+        if (res.statusCode === 200 && d && d.name === 'corp-portal') {
+          return resolve({ state: 'ok', mode: d.mode || 'both', version: d.version || '', status: 200 });
+        }
 
         // 403 + mode=web：服务端活着，只是不让桌面客户端连
-        if (res.statusCode === 403 && d && d.mode === 'web') return finish('web-only');
+        if (res.statusCode === 403 && d && d.mode === 'web') {
+          return resolve({ state: 'web-only', mode: 'web', status: 403 });
+        }
 
-        finish('none');
+        offline(res.statusCode);
       });
     });
-    req.on('error', () => finish('none'));
-    req.on('timeout', () => { req.destroy(); finish('none'); });
+    req.on('error', () => offline(0));
+    req.on('timeout', () => { req.destroy(); offline(0); });
   });
 }
 
-function ping(origin) {
-  return probe(origin).then((r) => r === 'ok');
-}
+/* ---------------- 连接设置窗口 ---------------- */
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/* 上次探测的结论，连不上时给失败页用 */
-let serverState = 'unknown';
-
-async function ensureServer() {
-  const origin = serverOrigin();
-  serverState = await probe(origin);
-
-  if (serverState === 'ok') return true;
-
-  /* 对方只开了网页版：说清楚，别在本地再起一个抢端口 */
-  if (serverState === 'web-only') return false;
-
-  /* 连的是别的机器上的服务端：连不上就直说，绝不在本地偷偷起一份自己的数据 */
-  if (!isLocalOrigin(origin)) return false;
-
-  fs.mkdirSync(dataDir(), { recursive: true });
-
-  serverProc = spawn(process.execPath, [path.join(APP_ROOT, 'server.js')], {
-    cwd: APP_ROOT,
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-      PORT: String(originPort(origin)),
-      PORTAL_DATA_DIR: dataDir(),
-      PORTAL_CONFIG: configPath()
-    },
-    stdio: 'ignore',
-    windowsHide: true
-  });
-
-  for (let i = 0; i < 48; i++) {
-    await wait(250);
-    if (await probe(origin) === 'ok') { serverState = 'ok'; return true; }
+/* 第一次打开、或者连不上时，先让用户填地址。
+   填的东西要能真的连上才保存 —— 免得存了个错的、下次又进不去。 */
+function createSetupWindow(origin, message) {
+  if (setupWin && !setupWin.isDestroyed()) {
+    setupWin.show();
+    setupWin.focus();
+    return setupWin;
   }
-  return false;
+
+  const self = new BrowserWindow({
+    width: 560,
+    height: 494,
+    resizable: false,
+    minimizable: true,
+    maximizable: false,
+    fullscreenable: false,
+    title: '连接服务端',
+    icon: iconPath(),
+    backgroundColor: '#f5f7fa',
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'host-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  setupWin = self;
+  self.setMenuBarVisibility(false);
+
+  self.loadFile(path.join(__dirname, 'setup.html'), {
+    query: {
+      origin: normalizeOrigin(origin) || '',
+      suggest: SUGGEST_ORIGIN,
+      msg: message || ''
+    }
+  });
+
+  self.once('ready-to-show', () => { if (!self.isDestroyed()) self.show(); });
+  self.on('closed', () => { if (setupWin === self) setupWin = null; });
+  self.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  return self;
 }
 
-function stopServer() {
-  if (!serverProc) return;
-  try { serverProc.kill(); } catch (e) {}
-  serverProc = null;
+function closeSetupWindow() {
+  const target = setupWin;
+  setupWin = null;
+  if (target && !target.isDestroyed()) target.destroy();
+}
+
+/* 连上了才往下走；否则回到设置窗口 */
+async function boot() {
+  const origin = serverOrigin();
+
+  if (!origin) {
+    createSetupWindow('', '第一次使用，先填服务端地址。');
+    return;
+  }
+
+  const info = await probeInfo(origin);
+
+  if (info.state === 'ok') {
+    createWindow();
+    return;
+  }
+
+  createSetupWindow(origin, info.state === 'web-only'
+    ? '这个服务端只开了网页版（--mode web），桌面客户端连不进去。让管理员改成 --mode both 或 desktop。'
+    : '连不上 ' + origin + '。确认服务端已经启动，地址和端口没写错。');
 }
 
 /* ---------------- 窗口 ---------------- */
@@ -220,18 +229,20 @@ function createWindow() {
 
   if (DEV) win.webContents.openDevTools({ mode: 'detach' });
 
-  win.webContents.on('did-fail-load', () => {
-    const why = serverState === 'web-only'
-      ? '这个服务端是「仅网页版」模式（--mode web），不接受桌面客户端。把服务端改成 --mode both 启动，或换一个服务端地址。'
-      : '连不上 ' + serverOrigin() + '。';
+  win.webContents.on('did-fail-load', (e, code, desc, url, isMainFrame) => {
+    // 页签里的 webview 失败不归这里管，只处理主页面
+    if (!isMainFrame || !/\/\/?$/i.test(String(url || '').replace(/^https?:\/\/[^/]+/i, '/'))) return;
 
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
-      '<body style="font:15px/1.9 system-ui;padding:60px;color:#334">' +
-      '<h2>连不上服务端</h2>' +
-      '<p>' + why + '</p>' +
-      '<p style="color:#8b95a1;font-size:13px">本机数据目录：' + dataDir() + '</p>' +
-      '<p style="color:#8b95a1;font-size:13px">改过服务端地址连不上的话，菜单「文件 → 改回本机服务端」可以恢复。</p>' +
-      '</body>'
+      '<body style="margin:0;display:grid;place-items:center;height:100vh;' +
+      'font:15px/1.9 \'Microsoft YaHei\',system-ui;color:#33404d;background:#f6f8fa">' +
+      '<div style="max-width:520px;padding:26px 30px;background:#fff;border-radius:14px;' +
+      'box-shadow:0 18px 44px -24px rgba(16,24,40,.4)">' +
+      '<h2 style="margin:0 0 10px;font-size:17px">连不上服务端</h2>' +
+      '<p style="margin:0;color:#5a6672;word-break:break-all">' + escHtml(serverOrigin() || '（还没设置）') + '</p>' +
+      '<p style="margin:14px 0 0;color:#8b95a1;font-size:13px">' +
+      '服务端可能关机了，或者网络不通。菜单「文件 → 重新设置服务端…」可以换地址，改完重启客户端。</p>' +
+      '</div></body>'
     ));
   });
 
@@ -305,23 +316,14 @@ function buildMenu() {
     {
       label: '文件',
       submenu: [
-        { label: '打开数据目录', click: () => { shell.openPath(app.getPath('userData')); } },
-        { label: '在浏览器中打开', click: () => { shell.openExternal(serverOrigin() + '/'); } },
-        { type: 'separator' },
-        { label: '连接的服务端：' + serverOrigin(), enabled: false },
+        { label: '重新设置服务端…', click: () => createSetupWindow(serverOrigin(), '') },
         {
-          label: '改回本机服务端',
-          enabled: !!normalizeOrigin(prefs.serverUrl) || !!process.env.PORTAL_SERVER,
-          click: () => {
-            prefs.serverUrl = '';
-            savePrefs();
-            dialog.showMessageBox(win, {
-              type: 'info',
-              message: '已改回本机服务端',
-              detail: '重启客户端后生效，也可以到「设置 → 打开与网络 → 桌面客户端」里改。'
-            });
-          }
+          label: '在浏览器中打开',
+          enabled: !!serverOrigin(),
+          click: () => { if (serverOrigin()) shell.openExternal(serverOrigin() + '/'); }
         },
+        { type: 'separator' },
+        { label: '当前服务端：' + (serverOrigin() || '未设置'), enabled: false },
         { type: 'separator' },
         { label: '退出', accelerator: 'Alt+F4', click: () => app.quit() }
       ]
@@ -394,8 +396,7 @@ function showAbout() {
     ['Electron', process.versions.electron],
     ['Chromium', process.versions.chrome],
     ['Node', process.versions.node],
-    ['服务端口', String(PORT)],
-    ['数据目录', dataDir()]
+    ['服务端', serverOrigin() || '（未设置）']
   ];
 
   // 图标直接内联，省得去读文件路径
@@ -440,18 +441,76 @@ ipcMain.handle('portal:server-info', () => {
   return {
     origin: origin,
     configured: !!normalizeOrigin(prefs.serverUrl),
-    local: isLocalOrigin(origin),
+    local: !!origin && isLocalOrigin(origin),
     packaged: PACKAGED,
-    dataDir: dataDir(),
     version: app.getVersion()
   };
 });
 
-ipcMain.handle('portal:set-server', (e, value) => {
-  prefs.serverUrl = normalizeOrigin(value);
+/* 门户设置页里改地址：先验证能连上，再存 + 重启，避免存个打不开的 */
+ipcMain.handle('portal:set-server', async (e, value) => {
+  const url = normalizeOrigin(value);
+  if (!url) return { ok: false, error: '先填地址，例如 http://192.168.3.20:8080' };
+
+  const info = await probeInfo(url);
+  if (info.state === 'web-only') {
+    return { ok: false, error: '这个服务端只开了网页版（--mode web），桌面客户端连不进去' };
+  }
+  if (info.state !== 'ok') {
+    return { ok: false, error: '连不上 ' + url + (info.status ? '（HTTP ' + info.status + '）' : '') };
+  }
+
+  prefs.serverUrl = url;
   savePrefs();
-  return { ok: true, origin: prefs.serverUrl || ('http://127.0.0.1:' + PORT) };
+
+  setTimeout(() => { app.relaunch(); app.exit(0); }, 300);
+  return { ok: true, origin: url, restart: true };
 });
+
+/* 连接设置窗口用 */
+ipcMain.handle('portal:probe-server', async (e, value) => {
+  const url = normalizeOrigin(value);
+  if (!url) return { ok: false, error: '先填地址，例如 http://192.168.3.20:8080' };
+
+  const info = await probeInfo(url);
+  if (info.state === 'ok') {
+    return { ok: true, origin: url, version: info.version, mode: info.mode };
+  }
+  if (info.state === 'web-only') {
+    return { ok: false, error: '这个服务端只开了网页版，桌面客户端连不进去' };
+  }
+  return { ok: false, error: '连不上 ' + url + (info.status ? '（HTTP ' + info.status + '）' : '，检查地址和端口') };
+});
+
+ipcMain.handle('portal:setup-save', async (e, value) => {
+  const url = normalizeOrigin(value);
+  if (!url) return { ok: false, error: '先填地址，例如 http://192.168.3.20:8080' };
+
+  const info = await probeInfo(url);
+  if (info.state === 'web-only') {
+    return { ok: false, error: '这个服务端只开了网页版（--mode web），桌面客户端连不进去。让管理员改成 --mode both 或 desktop。' };
+  }
+  if (info.state !== 'ok') {
+    return { ok: false, error: '连不上 ' + url + (info.status ? '（HTTP ' + info.status + '）' : '，检查地址和端口') };
+  }
+
+  prefs.serverUrl = url;
+  savePrefs();
+
+  if (win && !win.isDestroyed()) {
+    // 运行中改地址：重启自己，省得半截状态对不上
+    setTimeout(() => { app.relaunch(); app.exit(0); }, 200);
+    return { ok: true, restart: true };
+  }
+
+  // 先开大厅再关设置窗：反过来的话「最后一个窗口关闭」会直接触发退出
+  createWindow();
+  closeSetupWindow();
+
+  return { ok: true };
+});
+
+ipcMain.on('portal:quit', () => app.quit());
 
 ipcMain.on('portal:relaunch', () => {
   app.relaunch();
@@ -772,6 +831,28 @@ ipcMain.on('dl-tip-cancel', (e, id) => {
   dlFinish(Number(id), 'err', '已取消');
 });
 
+/* ---------------- 弹窗辅助 ---------------- */
+
+/* 更新检查可能在「连接服务端」窗口里点，那时还没有大厅窗口，
+   所以父窗口要动态找，实在没有就独立弹。 */
+function parentWin() {
+  if (win && !win.isDestroyed()) return win;
+  if (setupWin && !setupWin.isDestroyed()) return setupWin;
+  return null;
+}
+
+function msgBox(opts) {
+  const p = parentWin();
+  return p ? dialog.showMessageBox(p, opts) : dialog.showMessageBox(opts);
+}
+
+function msgBoxSync(opts) {
+  const p = parentWin();
+  return p ? dialog.showMessageBoxSync(p, opts) : dialog.showMessageBoxSync(opts);
+}
+
+ipcMain.handle('portal:check-update', () => checkUpdate(true));
+
 /* ---------------- 更新 ---------------- */
 
 function cmpVersion(a, b) {
@@ -815,7 +896,7 @@ async function checkUpdate(manual) {
 
   if (!rel || !rel.tag_name) {
     if (manual) {
-      dialog.showMessageBox(win, {
+      msgBox({
         type: 'warning',
         title: '检查更新',
         message: '连不上更新服务',
@@ -828,7 +909,7 @@ async function checkUpdate(manual) {
   const latest = String(rel.tag_name).replace(/^v/i, '');
   if (cmpVersion(latest, app.getVersion()) <= 0) {
     if (manual) {
-      dialog.showMessageBox(win, {
+      msgBox({
         type: 'info',
         title: '检查更新',
         message: '已是最新版本',
@@ -838,7 +919,7 @@ async function checkUpdate(manual) {
     return;
   }
 
-  const ans = await dialog.showMessageBox(win, {
+  const ans = await msgBox({
     type: 'info',
     title: '发现新版本',
     message: `发现 v${latest}（当前 v${app.getVersion()}）`,
@@ -887,7 +968,7 @@ function downloadAndInstall(rel) {
       if (res.statusCode !== 200) {
         res.resume();
         dlFinish(id, 'err', '下载失败：HTTP ' + res.statusCode);
-        dialog.showMessageBox(win, { type: 'error', message: '下载失败', detail: 'HTTP ' + res.statusCode + '，请到发布页手动下载。' });
+        msgBox({ type: 'error', message: '下载失败', detail: 'HTTP ' + res.statusCode + '，请到发布页手动下载。' });
         shell.openExternal(rel.html_url);
         return;
       }
@@ -912,7 +993,7 @@ function downloadAndInstall(rel) {
       file.on('finish', () => {
         file.close(() => {
           dlFinish(id, 'ok', '下载完成');
-          const go = dialog.showMessageBoxSync(win, {
+          const go = msgBoxSync({
             type: 'question',
             message: '下载完成，现在安装吗？',
             detail: '安装过程会关闭客户端，装完重新打开即可。',
@@ -931,7 +1012,7 @@ function downloadAndInstall(rel) {
 
       file.on('error', () => {
         dlFinish(id, 'err', '保存失败');
-        dialog.showMessageBox(win, { type: 'error', message: '保存失败', detail: target });
+        msgBox({ type: 'error', message: '保存失败', detail: target });
       });
     });
 
@@ -940,7 +1021,7 @@ function downloadAndInstall(rel) {
     req.on('error', () => {
       if (cancelled) return;
       dlFinish(id, 'err', '下载失败：网络中断');
-      dialog.showMessageBox(win, { type: 'error', message: '下载失败', detail: '网络中断，请到发布页手动下载。' });
+      msgBox({ type: 'error', message: '下载失败', detail: '网络中断，请到发布页手动下载。' });
     });
   };
 
@@ -968,23 +1049,21 @@ if (!app.requestSingleInstanceLock()) {
     hookDownloads();
     buildMenu();
 
-    const ok = await ensureServer();
-    if (!ok) console.error('后端没起来，端口 ' + PORT);
-
-    createWindow();
+    // 连得上就进大厅，连不上（含第一次）先填地址
+    await boot();
 
     // 打包版启动后静默查一次更新，连不上就算了
     if (PACKAGED) setTimeout(() => checkUpdate(false), 5000);
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      if (BrowserWindow.getAllWindows().length === 0) boot();
     });
   });
 
   app.on('window-all-closed', () => {
-    stopServer();
-    app.quit();
+    // 设置窗 → 大厅的切换有个瞬间可能没有窗口，等一拍再判断
+    setTimeout(() => {
+      if (BrowserWindow.getAllWindows().length === 0) app.quit();
+    }, 80);
   });
-
-  app.on('quit', stopServer);
 }

@@ -16,17 +16,24 @@ npm install          # 第一次要下 Electron 运行时，约 100MB
 npm start            # 或双击 start.bat
 ```
 
-壳会自动拉起仓库根目录的 `server.js`（8080 已经在跑就直接复用），退出时收走子进程。调试用 `npm run start:dev`，会额外打开 DevTools。
+壳不启动后端，只连现成的服务端 —— 先把服务端跑起来（仓库根目录 `node server.js` 或 `start.bat`），再 `npm start`。
+第一次打开会弹「连接服务端」窗口，填地址即可。调试用 `npm run start:dev`，会额外打开 DevTools。
 
 ## 连哪个服务端
 
-壳默认连本机 `http://127.0.0.1:8080`，端口上已经有服务端就直接复用 —— 所以网页版和桌面版看到的是**同一份数据**，不存在两边各存一套。
+壳里没有后端代码，地址必须由用户提供：
 
-要连别的机器（同事的、服务器的）：
+- 第一次打开 → 自动弹 `setup.html`（连接设置窗口），填 `http://192.168.3.20:8080`
+- 「测试连接」走 `portal:probe-server`，主进程带 `CorpPortalDesktop/<版本>` UA 请求 `/api/ping`
+- 「连接」走 `portal:setup-save`：**先探测，连得上才写 prefs**，然后开大厅、关设置窗
+- 底部有版本号和「检查更新」（`portal:check-update`），走的是和菜单「帮助 → 检查更新」同一套逻辑，弹窗挂在设置窗上
 
-- 门户里「设置 → 打开与网络 → 桌面客户端」，填 `http://192.168.3.20:8080`，保存后重启客户端
-- 或者环境变量 `PORTAL_SERVER=http://192.168.3.20:8080`
-- 忘掉地址连不上时，菜单「文件 → 改回本机服务端」兜底
+之后改地址有两个入口：大厅「设置 → 打开与网络 → 桌面客户端」，或菜单「文件 → 重新设置服务端…」。
+两处都会先验证再保存，运行时改会 `app.relaunch()` 重启自己。
+
+也可以用环境变量跳过引导：`PORTAL_SERVER=http://192.168.3.20:8080`（优先级最高，不写入 prefs）。
+
+数据只在服务端那一份，本地唯一落地的是 `%APPDATA%\portal-desktop\desktop-prefs.json`（地址 + 菜单栏显隐）。
 
 配了远端地址之后，壳**不会**在本地偷偷起一个后端，连不上就直说 —— 免得又造出一份平行的数据。
 
@@ -78,13 +85,9 @@ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-
 
 `<webview>` 的 preload 由主进程在 `will-attach-webview` 里强制指定，页面传什么都不认；`nodeIntegration` 关掉，`contextIsolation` 打开。
 
-## 数据与更新
+## 更新
 
-打包后后端代码在安装目录的 `resources/app-root`（只读），所以壳自己兜底起后端时，数据写到 `%APPDATA%\portal-desktop\data`，卸载不删。菜单「文件 → 打开数据目录」可直接打开。
-
-注意这个目录只在「本机没有服务端、由壳兜底」时才用到。只要本机 8080（或你配的服务端地址）上已经有服务端，数据就存在那台服务端的 `data/` 里，网页版和桌面版读的是同一个文件。
-
-更新有两条路：启动 5 秒后静默查一次 GitHub Release；菜单「帮助 → 检查更新」手动查，发现新版可「下载并安装」（下到临时目录，装完自动重启）。
+安装包里没有后端，只有 Electron 运行时 + `main.js` / 三个 preload / `setup.html`。更新有两条路：启动 5 秒后静默查一次 GitHub Release；菜单「帮助 → 检查更新」手动查，发现新版可「下载并安装」（下到临时目录，装完自动重启）。
 
 ## 关掉 parent 覆盖
 

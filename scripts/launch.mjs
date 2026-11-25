@@ -126,7 +126,12 @@ function startClient() {
   const proc = spawn(IS_WIN ? 'npm.cmd' : 'npm', ['--prefix', 'desktop', 'start'], {
     cwd: ROOT,
     stdio: 'inherit',
-    shell: IS_WIN
+    shell: IS_WIN,
+    env: {
+      ...process.env,
+      // 客户端自己不起服务，这里把刚启动的服务端直接告诉它，首次也不会弹引导
+      PORTAL_SERVER: 'http://127.0.0.1:' + PORT
+    }
   });
   proc.on('exit', (code) => process.exit(code || 0));
 }

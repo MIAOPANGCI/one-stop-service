@@ -1,6 +1,6 @@
 {
   "name": "portal-desktop",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "企业服务大厅 · 桌面客户端",
   "main": "main.js",
@@ -23,27 +23,12 @@
     },
     "files": [
       "main.js",
+      "setup.html",
       "host-preload.js",
       "guest-preload.js",
       "dl-tip-preload.js",
       "build/icon.png",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "../",
-        "to": "app-root",
-        "filter": [
-          "server.js",
-          "package.json",
-          "index.html",
-          "login.html",
-          "users.html",
-          "assets/**/*",
-          "deploy/**/*",
-          "README.md"
-        ]
-      }
     ],
     "win": {
       "icon": "build/icon.ico",
