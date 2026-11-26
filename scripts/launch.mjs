@@ -2,11 +2,11 @@
 /**
  * 一键启动：网页版 / 桌面客户端 / 两者
  *
- *   node scripts/launch.mjs          交互式菜单（start.bat 双击走这条）
- *   node scripts/launch.mjs web      仅网页版（服务端 + 浏览器）
- *   node scripts/launch.mjs desktop  仅桌面客户端服务端（不打开客户端）
+ *   node scripts/launch.mjs          交互式菜单（start.bat 双击走这条，回车即可）
+ *   node scripts/launch.mjs web      服务端 + 浏览器
+ *   node scripts/launch.mjs desktop  只服务桌面客户端（浏览器 403）
  *   node scripts/launch.mjs both     服务端 + 浏览器 + 本机客户端
- *   node scripts/launch.mjs client   只打开本机客户端，连已有的服务端
+ *   node scripts/launch.mjs client   只打开本机客户端
  *   node scripts/launch.mjs web --port 9000 --host 192.168.1.20
  *
  * 三种方式共用一个服务端进程、一份 data —— 桌面客户端只是连过去的壳，
@@ -257,6 +257,13 @@ function waitExit(proc) {
 
 /* mode: web | desktop | both | client */
 async function run(mode, openPage) {
+  // server：只起服务端，浏览器和客户端都能连，但不自动打开任何窗口
+  if (mode === 'server') {
+    const srv = await ensureServer('both', openPage);
+    await supervise(srv, 'both', openPage, '服务端在跑，这个窗口别关（关了服务就停）。');
+    return;
+  }
+
   if (mode === 'client') {
     log('只打开桌面客户端（连已有的服务端）');
     if (!startClient()) process.exit(1);
@@ -316,57 +323,52 @@ function closeAsk() {
 async function menu() {
   console.log('');
   console.log('  ============================================');
-  console.log('    企业服务大厅 · 启动方式');
+  console.log('    企业服务大厅');
   console.log('  ============================================');
   console.log('');
-  console.log('    1  仅网页版            浏览器可访问，桌面客户端连不进来');
-  console.log('    2  仅桌面客户端服务端  只服务客户端（浏览器 403），不在这里开客户端');
-  console.log('    3  两者都启动          服务端 + 浏览器 + 本机客户端');
-  console.log('    4  只打开桌面客户端    连已有的服务端，不启动服务端');
-  console.log('    5  自定义端口          先填端口，再选模式');
-  console.log('    q  退出');
+  console.log('    回车   打开大厅（服务端 + 浏览器）');
+  console.log('    1      只开服务端（给其他电脑的客户端连）');
+  console.log('    2      只开桌面客户端（连已在运行的服务端）');
+  console.log('    p      换个端口');
+  console.log('    q      退出');
   console.log('');
 
-  const ans = (await ask('  请选择 [1-5，默认 3]：') || '3').toLowerCase();
+  const ans = (await ask('  请选择 [回车 = 打开大厅]：') || '').toLowerCase();
 
   if (ans === 'q' || ans === 'quit' || ans === 'exit') { closeAsk(); return; }
 
+  // 只开服务端：谁来连都行，但不自动弹浏览器
   if (ans === '1') {
-    log('仅网页版：浏览器可以访问，桌面客户端连不进来');
-    return run('web', true);
+    const ips = localIPs();
+    if (ips.length) console.log('  其他电脑连：' + ips.map(function (ip) { return 'http://' + ip + ':' + PORT; }).join('  或  '));
+    log('只开服务端，端口 ' + PORT + '（关掉这个窗口服务就停了）');
+    return run('server', false);
   }
 
-  if (ans === '2') {
-    log('仅桌面客户端服务端：浏览器会被拒绝，这里不打开客户端');
-    return run('desktop', false);
+  if (ans === '2') return run('client');
+
+  if (ans === 'p') {
+    const p = await ask('  端口号 [默认 ' + PORT + ']：');
+    PORT = resolvePort(p || PORT);
+    log('端口 ' + PORT + '，打开大厅');
+    return run('server', true);
   }
 
+  if (ans === '' || ans === '3' || ans === 'y') {
+    log('启动服务端并打开大厅');
+    return run('server', true);
+  }
+
+  // 老习惯按 1/2/3/4/5 的，也尽量给出合理结果
   if (ans === '4') return run('client');
-
   if (ans === '5') {
     const p = await ask('  端口号 [默认 ' + PORT + ']：');
     PORT = resolvePort(p || PORT);
-
-    const ips = localIPs();
-    if (ips.length) console.log('  本机地址：' + ips.join(' / '));
-
-    const h = await ask('  监听地址 [回车 = 0.0.0.0 全部网卡；127.0.0.1 仅本机；也可填上面某个 IP]：');
-    HOST = String(h || '').trim() || '0.0.0.0';
-
-    const m = (await ask('  模式 [1 仅网页 / 2 仅桌面 / 3 两者，默认 3]：') || '3').trim();
-    const mode = m === '1' ? 'web' : m === '2' ? 'desktop' : 'both';
-
-    log('端口 ' + PORT + ' · 监听 ' + HOST + ' · ' + MODE_TEXT[mode]);
-    return run(mode, mode !== 'desktop');
+    return run('server', true);
   }
 
-  if (ans === '3') {
-    log('网页版 + 桌面客户端');
-    return run('both', true);
-  }
-
-  log('没看懂「' + ans + '」，按「两者都启动」处理');
-  return run('both', true);
+  log('没看懂「' + ans + '」，按「打开大厅」处理');
+  return run('server', true);
 }
 
 /* ---------------- 入口 ---------------- */
