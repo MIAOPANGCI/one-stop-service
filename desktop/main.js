@@ -1251,136 +1251,92 @@ function normalizeProxy(v) {
 }
 
 /* 安装版还是便携版：两个附件都有就问一句，按当前运行方式给推荐 */
-function pickAsset(rel) {
-  const assets = rel.assets || [];
-  const setup = assets.find((a) => /setup.*\.exe$/i.test(a.name));
-  const portable = assets.find((a) => /portable.*\.exe$/i.test(a.name));
-  const unpacked = assets.find((a) => /unpacked.*\.zip$/i.test(a.name));
-  const anyExe = assets.find((a) => /\.exe$/i.test(a.name)) || null;
+/* 当前是哪种安装形态：便携版 / 目录版 / 安装版 */
+function installKind() {
+  if (process.env.PORTABLE_EXECUTABLE_FILE || process.env.PORTABLE_EXECUTABLE_DIR) return 'portable';
 
-  const runningPortable = !!process.env.PORTABLE_EXECUTABLE_DIR;
+  try {
+    const dir = path.dirname(app.getPath('exe'));
+    if (fs.readdirSync(dir).some(function (n) { return /^Uninstall .+\.exe$/i.test(n); })) return 'setup';
+  } catch (e) {}
 
-  if (!setup && !portable && !unpacked) return { kind: 'other', asset: anyExe };
+  return 'unpacked';
+}
 
-  // 老版本发布里没有目录版，维持原来的两选一
-  if (!unpacked || !setup || !portable) {
-    if (!setup || !portable) return { kind: setup ? 'setup' : 'portable', asset: setup || portable };
+function kindLabel(kind) {
+  if (kind === 'portable') return '便携版（单个 exe）';
+  if (kind === 'setup') return '安装版（装在系统里）';
+  return '目录版（解压出来的文件夹）';
+}
 
-    const ans = msgBoxSync({
-      type: 'question',
-      message: '下载哪个版本？',
-      detail: '安装版：装到本机，带开始菜单和桌面快捷方式，适合长期用。\n' +
-        '便携版：单个 exe，放在哪都能跑，不写注册表。' +
-        (runningPortable ? '\n\n你现在用的就是便携版，建议继续用便携版。' : ''),
-      buttons: [(runningPortable ? '便携版' : '安装版') + '（推荐）', runningPortable ? '安装版' : '便携版', '取消'],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true
-    });
-
-    if (ans === 2) return null;
-    const first = runningPortable ? portable : setup;
-    const second = runningPortable ? setup : portable;
-    const picked = ans === 0 ? first : second;
-    return { kind: picked === setup ? 'setup' : 'portable', asset: picked };
-  }
+/* 手动选择时用的四选一，返回 {kind, asset} */
+function askWhichBuild(rel, setup, portable, unpacked) {
+  const runningPortable = installKind() === 'portable';
 
   const ans = msgBoxSync({
     type: 'question',
     message: '下载哪个版本？',
     detail: '安装版：装到本机，有开始菜单和桌面快捷方式，双击即开。\n' +
       '目录版：解压一次，以后直接点里面的 exe，启动和安装版一样快，不写注册表。\n' +
-      '便携版：单个 exe，放哪都能跑，但每次双击都要先解压到临时目录。' +
-      (runningPortable ? '\n\n你现在用的是便携版，建议换成目录版，双击会快很多。' : ''),
-    buttons: [runningPortable ? '目录版（推荐）' : '安装版（推荐）', runningPortable ? '安装版' : '目录版', '便携版', '取消'],
-    defaultId: 0,
+      '便携版：单个 exe，放哪都能跑，但每次双击都要先解压到临时目录。',
+    buttons: ['安装版', '目录版', '便携版', '取消'],
+    defaultId: runningPortable ? 2 : 0,
     cancelId: 3,
     noLink: true
   });
 
   if (ans === 3) return null;
 
-  const order = runningPortable
-    ? [ { kind: 'unpacked', asset: unpacked }, { kind: 'setup', asset: setup }, { kind: 'portable', asset: portable } ]
-    : [ { kind: 'setup', asset: setup }, { kind: 'unpacked', asset: unpacked }, { kind: 'portable', asset: portable } ];
+  const order = [
+    { kind: 'setup', asset: setup },
+    { kind: 'unpacked', asset: unpacked },
+    { kind: 'portable', asset: portable }
+  ].filter(function (x) { return !!x.asset; });
 
-  return order[ans] || order[0];
+  return order[ans] || order[0] || null;
 }
 
-/* ---------------- 目录版：解压 + 启动 ---------------- */
-const zlib = require('zlib');
+/* 按当前安装形态自动选包，最多问一句「现在更新吗」 */
+function pickAsset(rel) {
+  const assets = rel.assets || [];
+  const setup = assets.find((x) => /setup.*\.exe$/i.test(x.name));
+  const portable = assets.find((x) => /portable.*\.exe$/i.test(x.name));
+  const unpacked = assets.find((x) => /unpacked.*\.zip$/i.test(x.name));
+  const anyExe = assets.find((x) => /\.exe$/i.test(x.name)) || null;
 
-function zipEntries(buf) {
-  let eocd = -1;
-  const floor = Math.max(0, buf.length - 65558);
-  for (let i = buf.length - 22; i >= floor; i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
-  }
-  if (eocd < 0) throw new Error('不是有效的 zip 文件');
+  const kind = installKind();
 
-  const count = buf.readUInt16LE(eocd + 10);
-  let off = buf.readUInt32LE(eocd + 16);
-  const list = [];
+  // 按当前形态挑同类型的包，没有就退而求其次
+  let best = null;
+  if (kind === 'portable') best = portable ? { kind: 'portable', asset: portable } : (unpacked ? { kind: 'unpacked', asset: unpacked } : null);
+  else if (kind === 'setup') best = setup ? { kind: 'setup', asset: setup } : (portable ? { kind: 'portable', asset: portable } : null);
+  else best = unpacked ? { kind: 'unpacked', asset: unpacked } : (portable ? { kind: 'portable', asset: portable } : null);
 
-  for (let i = 0; i < count; i++) {
-    if (buf.readUInt32LE(off) !== 0x02014b50) break;
-    const method = buf.readUInt16LE(off + 10);
-    const csize = buf.readUInt32LE(off + 20);
-    const nameLen = buf.readUInt16LE(off + 28);
-    const extraLen = buf.readUInt16LE(off + 30);
-    const cmtLen = buf.readUInt16LE(off + 32);
-    const flag = buf.readUInt16LE(off + 8);
-    const lho = buf.readUInt32LE(off + 42);
+  if (!best) best = anyExe ? { kind: 'other', asset: anyExe } : null;
+  if (!best) return null;
 
-    const rawName = buf.subarray(off + 46, off + 46 + nameLen);
-    let name = rawName.toString('utf8');
+  const tag = String(rel.tag_name || rel.name || '');
 
-    // 没打 UTF-8 标记的，多半是 7-Zip 在中文系统上按 GBK 写的，按 GBK 再解一次
-    if (!(flag & 0x800)) {
-      try {
-        const gbk = new TextDecoder('gbk').decode(rawName);
-        if (gbk) name = gbk;
-      } catch (e) {}
-    }
+  const ans = msgBoxSync({
+    type: 'question',
+    message: '发现新版本 ' + tag,
+    detail: '当前是：' + kindLabel(kind) + '\n' +
+      '将下载：' + best.asset.name + '\n\n' +
+      (best.kind === 'unpacked'
+        ? '下载后会解压并覆盖当前目录，然后自动重启。'
+        : best.kind === 'setup'
+          ? '下载后会运行安装程序，按提示装完即可。'
+          : '下载后新文件会放在同一个文件夹，点「切换并重启」就换过去。'),
+    buttons: ['立即更新', '选其他版本', '取消'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true
+  });
 
-    name = name.replace(/\\/g, '/');
-    list.push({ name, method, csize, lho });
-    off += 46 + nameLen + extraLen + cmtLen;
-  }
+  if (ans === 2) return null;
+  if (ans === 1) return askWhichBuild(rel, setup, portable, unpacked);
 
-  return list;
-}
-
-async function unzipTo(zipPath, outDir, onProgress) {
-  const buf = await fs.promises.readFile(zipPath);
-  const list = zipEntries(buf).filter((e) => !/\/$/.test(e.name));
-
-  let done = 0;
-
-  for (const e of list) {
-    if (e.name.indexOf('..') > -1 || e.name.charAt(0) === '/') throw new Error('压缩包里路径不对：' + e.name);
-
-    const dest = path.join(outDir, e.name);
-    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
-
-    const nl = buf.readUInt16LE(e.lho + 26);
-    const el = buf.readUInt16LE(e.lho + 28);
-    const start = e.lho + 30 + nl + el;
-    const raw = buf.subarray(start, start + e.csize);
-
-    let data = raw;
-    if (e.method === 8) {
-      data = await new Promise((res, rej) => {
-        zlib.inflateRaw(raw, (err, out) => (err ? rej(err) : res(out)));
-      });
-    }
-
-    await fs.promises.writeFile(dest, data);
-    done++;
-    if (onProgress && (done % 8 === 0 || done === list.length)) onProgress(done, list.length);
-  }
-
-  return done;
+  return best;
 }
 
 /* 目录版装到哪：便携版旁边建一个「企业服务大厅」文件夹；
@@ -1388,8 +1344,9 @@ async function unzipTo(zipPath, outDir, onProgress) {
 function unpackTargetDir() {
   if (portableExe()) return path.join(path.dirname(portableExe()), '企业服务大厅');
 
-  const own = path.dirname(app.getPath('exe'));
-  return path.basename(own) === '企业服务大厅' ? own : path.join(own, '企业服务大厅');
+  // 目录版：装在哪就更新哪，别管文件夹叫什么名字
+  // （1.5.2 那版解到「企业服务大厅-1.5.2」，按名字判断会另建一个新文件夹）
+  return path.dirname(app.getPath('exe'));
 }
 
 /* 先解到临时目录，重启进临时目录后再覆盖目标目录：
@@ -1469,6 +1426,36 @@ function copyTree(src, dst) {
   });
 }
 
+function updateLog(line) {
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'update.log'),
+      new Date().toISOString() + '  ' + line + '\n');
+  } catch (e) {}
+}
+
+/* 更新成功后，把旁边那些「企业服务大厅-x.y.z」的老目录清掉 */
+function cleanOldVersionDirs(targetDir) {
+  const parent = path.dirname(targetDir);
+  const self = path.dirname(app.getPath('exe'));
+
+  try {
+    fs.readdirSync(parent)
+      .filter(function (n) { return /^企业服务大厅-\d/.test(n); })
+      .forEach(function (n) {
+        const dir = path.join(parent, n);
+        if (path.resolve(dir) === path.resolve(self)) return;
+        if (path.resolve(dir) === path.resolve(targetDir)) return;
+        try {
+          if (!fs.existsSync(path.join(dir, '企业服务大厅.exe'))) return;
+          fs.rmSync(dir, { recursive: true, force: true });
+          updateLog('已清掉旧版本目录 ' + dir);
+        } catch (e) {
+          updateLog('旧版本目录删不掉 ' + dir + '：' + e.message);
+        }
+      });
+  } catch (e) {}
+}
+
 function applyPendingInstall() {
   const pi = prefs.pendingInstall;
   if (!pi || !pi.stage || !pi.target) return false;
@@ -1476,96 +1463,82 @@ function applyPendingInstall() {
   const stageExe = path.join(pi.stage, '企业服务大厅.exe');
   const targetExe = path.join(pi.target, '企业服务大厅.exe');
 
-  prefs.pendingInstall = null;
-  savePrefs();
+  updateLog('开始安装：stage=' + pi.stage + ' target=' + pi.target);
 
-  if (!fs.existsSync(stageExe)) return false;
+  if (!fs.existsSync(stageExe)) {
+    updateLog('临时目录里没有主程序，放弃');
+    prefs.pendingInstall = null;
+    savePrefs();
+    return false;
+  }
 
   let ok = false;
+  let lastErr = '';
 
   if (!fs.existsSync(pi.target)) {
     try {
       fs.mkdirSync(path.dirname(pi.target), { recursive: true });
       fs.renameSync(pi.stage, pi.target);
       ok = true;
-    } catch (e) {}
-  } else {
+      updateLog('目标不存在，临时目录直接改名为安装目录');
+    } catch (e) {
+      lastErr = e.message;
+    }
+  }
+
+  if (!ok && fs.existsSync(pi.target)) {
     for (let i = 0; i < 25; i++) {
       try {
         copyTree(pi.stage, pi.target);
         ok = true;
+        updateLog('已覆盖到 ' + pi.target);
         break;
       } catch (e) {
+        lastErr = e.message;
         sleepSync(400);
       }
     }
   }
 
-  if (!ok) return false;   // 覆盖失败就先用临时目录里的版本跑着
+  if (!ok) {
+    updateLog('覆盖失败：' + lastErr);
+    // 先继续用临时目录里的版本跑，下次启动再试一次
+    msgBox({
+      type: 'warning',
+      message: '暂时没能替换原目录',
+      detail: '新版本已经在运行，但原目录 ' + pi.target + ' 里的文件没被替换。\n\n' +
+        (lastErr ? '原因：' + lastErr + '\n\n' : '') +
+        '多半是那个目录里的文件还被占用。关掉所有客户端窗口后重新打开，会自动再试一次。'
+    });
+    return false;
+  }
+
+  prefs.pendingInstall = null;
+  savePrefs();
 
   // 老的便携版 exe 可以删了（已经不在了）
   if (pi.oldPortable && fs.existsSync(pi.oldPortable)) {
-    try { fs.unlinkSync(pi.oldPortable); } catch (e) {}
+    try {
+      fs.unlinkSync(pi.oldPortable);
+      updateLog('已删除旧便携版 ' + pi.oldPortable);
+    } catch (e) {
+      updateLog('旧便携版删不掉：' + e.message);
+    }
   }
+
+  cleanOldVersionDirs(pi.target);
 
   try {
     app.relaunch({ execPath: targetExe, args: [] });
     quitting = true;
+    updateLog('替换完成，重启进 ' + targetExe);
     setTimeout(() => app.quit(), 200);
     return true;
   } catch (e) {
+    updateLog('重启失败：' + e.message);
     return false;
   }
 }
-
-/* 便携版没法「就地替换」：exe 被它自己的 launcher 进程占着（EBUSY），
-   运行期间任何进程都覆盖不了，包括它自己 —— 所以不硬来：
-   新版本落到同一个文件夹、用真实版本号命名，重启到它，旧的下次启动再删。
-   文件名带版本号确实不如原地替换好看，但零失败：不碰正在运行的那个文件。 */
-function portableExe() {
-  return process.env.PORTABLE_EXECUTABLE_FILE || '';
-}
-
-/* 切换后要清理的旧 exe：新实例起来再删（那时旧进程已经退了） */
-function cleanReplacedPortable() {
-  const old = prefs.replacedExe;
-  if (!old) return;
-
-  let tries = 0;
-
-  const tick = () => {
-    if (!fs.existsSync(old)) { prefs.replacedExe = ''; savePrefs(); return; }
-    try {
-      fs.unlinkSync(old);
-      prefs.replacedExe = '';
-      savePrefs();
-    } catch (e) {
-      if (++tries < 20) setTimeout(tick, 800);
-    }
-  };
-
-  tick();
-}
-
-/* 老版本可能留下的 .old / .new 残骸 */
-function cleanPortableLeftovers() {
-  const dest = portableExe();
-  if (!dest) return;
-
-  ['.old', '.new'].forEach((suffix) => {
-    const f = dest + suffix;
-    let tries = 0;
-
-    const tick = () => {
-      if (!fs.existsSync(f)) return;
-      try { fs.unlinkSync(f); }
-      catch (e) { if (++tries < 8) setTimeout(tick, 900); }
-    };
-
-    tick();
-  });
-}
-
 /* 安装成功后临时目录会留下，下次启动慢慢扫掉 */
 function cleanStageDirs() {
   setTimeout(function () {
