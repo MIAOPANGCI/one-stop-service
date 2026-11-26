@@ -138,6 +138,27 @@ async function waitFlagDone(ms) {
   return null;
 }
 
+let currentServer = null;
+let shuttingDown = false;
+
+/* Ctrl+C 的时候别抢戏：服务端在同一个控制台里，它自己会打印「正在关闭，写入数据…」
+   并落盘。这里只是别把自己留在那儿，也不要再插一句话把两段输出搅在一起。 */
+function shutdownBySignal() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  if (currentServer) {
+    try { currentServer.once('exit', function () { setTimeout(function () { process.exit(0); }, 120); }); } catch (e) {}
+  }
+
+  setTimeout(function () { process.exit(0); }, 1200);
+  setTimeout(function () { process.exit(0); }, 3000);
+}
+
+process.on('SIGINT', shutdownBySignal);
+process.on('SIGBREAK', shutdownBySignal);
+process.on('SIGHUP', shutdownBySignal);
+
 function spawnServer(serverMode, openPage) {
   const args = [path.join(ROOT, 'server.js'), '--mode', serverMode, '--port', String(PORT)];
   if (HOST) args.push('--host', HOST);
@@ -145,7 +166,7 @@ function spawnServer(serverMode, openPage) {
 
   try { fs.mkdirSync(path.dirname(FLAG), { recursive: true }); } catch (e) {}
 
-  return spawn(process.execPath, args, {
+  currentServer = spawn(process.execPath, args, {
     cwd: ROOT,
     stdio: 'inherit',
     env: {
@@ -155,6 +176,8 @@ function spawnServer(serverMode, openPage) {
       PORTAL_UPDATE_FLAG: FLAG
     }
   });
+
+  return currentServer;
 }
 
 async function waitUp(ms) {

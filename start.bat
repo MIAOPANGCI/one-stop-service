@@ -15,6 +15,8 @@ if errorlevel 1 goto :nonode
 if defined ADMIN_PASSWORD echo   [i] ADMIN_PASSWORD is set.
 
 rem  no args = interactive menu; or: start.bat web / desktop / both
+rem  to stop the server later, just close this window (Ctrl+C also works,
+rem  but cmd.exe will ask "Terminate batch job (Y/N)?" -- answer Y)
 node scripts\launch.mjs %*
 
 echo.
