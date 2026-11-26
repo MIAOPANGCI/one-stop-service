@@ -1198,34 +1198,182 @@ function pickAsset(rel) {
   const assets = rel.assets || [];
   const setup = assets.find((a) => /setup.*\.exe$/i.test(a.name));
   const portable = assets.find((a) => /portable.*\.exe$/i.test(a.name));
-
-  if (!setup && !portable) {
-    return assets.find((a) => /\.exe$/i.test(a.name)) || null;
-  }
-  if (!setup || !portable) return setup || portable;
+  const unpacked = assets.find((a) => /unpacked.*\.zip$/i.test(a.name));
+  const anyExe = assets.find((a) => /\.exe$/i.test(a.name)) || null;
 
   const runningPortable = !!process.env.PORTABLE_EXECUTABLE_DIR;
-  const first = runningPortable ? portable : setup;
-  const second = runningPortable ? setup : portable;
+
+  if (!setup && !portable && !unpacked) return { kind: 'other', asset: anyExe };
+
+  // 老版本发布里没有目录版，维持原来的两选一
+  if (!unpacked || !setup || !portable) {
+    if (!setup || !portable) return { kind: setup ? 'setup' : 'portable', asset: setup || portable };
+
+    const ans = msgBoxSync({
+      type: 'question',
+      message: '下载哪个版本？',
+      detail: '安装版：装到本机，带开始菜单和桌面快捷方式，适合长期用。\n' +
+        '便携版：单个 exe，放在哪都能跑，不写注册表。' +
+        (runningPortable ? '\n\n你现在用的就是便携版，建议继续用便携版。' : ''),
+      buttons: [(runningPortable ? '便携版' : '安装版') + '（推荐）', runningPortable ? '安装版' : '便携版', '取消'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true
+    });
+
+    if (ans === 2) return null;
+    const first = runningPortable ? portable : setup;
+    const second = runningPortable ? setup : portable;
+    const picked = ans === 0 ? first : second;
+    return { kind: picked === setup ? 'setup' : 'portable', asset: picked };
+  }
 
   const ans = msgBoxSync({
     type: 'question',
     message: '下载哪个版本？',
-    detail: '安装版：装到本机，带开始菜单和桌面快捷方式，适合长期用。\n' +
-      '便携版：单个 exe，放在哪都能跑，不写注册表。' +
-      (runningPortable ? '\n\n你现在用的就是便携版，建议继续用便携版。' : ''),
-    buttons: [
-      (first === setup ? '安装版' : '便携版') + '（推荐）',
-      (second === setup ? '安装版' : '便携版'),
-      '取消'
-    ],
+    detail: '安装版：装到本机，有开始菜单和桌面快捷方式，双击即开。\n' +
+      '目录版：解压一次，以后直接点里面的 exe，启动和安装版一样快，不写注册表。\n' +
+      '便携版：单个 exe，放哪都能跑，但每次双击都要先解压到临时目录。' +
+      (runningPortable ? '\n\n你现在用的是便携版，建议换成目录版，双击会快很多。' : ''),
+    buttons: [runningPortable ? '目录版（推荐）' : '安装版（推荐）', runningPortable ? '安装版' : '目录版', '便携版', '取消'],
     defaultId: 0,
-    cancelId: 2,
+    cancelId: 3,
     noLink: true
   });
 
-  if (ans === 2) return null;
-  return ans === 0 ? first : second;
+  if (ans === 3) return null;
+
+  const order = runningPortable
+    ? [ { kind: 'unpacked', asset: unpacked }, { kind: 'setup', asset: setup }, { kind: 'portable', asset: portable } ]
+    : [ { kind: 'setup', asset: setup }, { kind: 'unpacked', asset: unpacked }, { kind: 'portable', asset: portable } ];
+
+  return order[ans] || order[0];
+}
+
+/* ---------------- 目录版：解压 + 启动 ---------------- */
+const zlib = require('zlib');
+
+function zipEntries(buf) {
+  let eocd = -1;
+  const floor = Math.max(0, buf.length - 65558);
+  for (let i = buf.length - 22; i >= floor; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('不是有效的 zip 文件');
+
+  const count = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+  const list = [];
+
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(off) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(off + 10);
+    const csize = buf.readUInt32LE(off + 20);
+    const nameLen = buf.readUInt16LE(off + 28);
+    const extraLen = buf.readUInt16LE(off + 30);
+    const cmtLen = buf.readUInt16LE(off + 32);
+    const flag = buf.readUInt16LE(off + 8);
+    const lho = buf.readUInt32LE(off + 42);
+
+    const rawName = buf.subarray(off + 46, off + 46 + nameLen);
+    let name = rawName.toString('utf8');
+
+    // 没打 UTF-8 标记的，多半是 7-Zip 在中文系统上按 GBK 写的，按 GBK 再解一次
+    if (!(flag & 0x800)) {
+      try {
+        const gbk = new TextDecoder('gbk').decode(rawName);
+        if (gbk) name = gbk;
+      } catch (e) {}
+    }
+
+    name = name.replace(/\\/g, '/');
+    list.push({ name, method, csize, lho });
+    off += 46 + nameLen + extraLen + cmtLen;
+  }
+
+  return list;
+}
+
+async function unzipTo(zipPath, outDir, onProgress) {
+  const buf = await fs.promises.readFile(zipPath);
+  const list = zipEntries(buf).filter((e) => !/\/$/.test(e.name));
+
+  let done = 0;
+
+  for (const e of list) {
+    if (e.name.indexOf('..') > -1 || e.name.charAt(0) === '/') throw new Error('压缩包里路径不对：' + e.name);
+
+    const dest = path.join(outDir, e.name);
+    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+
+    const nl = buf.readUInt16LE(e.lho + 26);
+    const el = buf.readUInt16LE(e.lho + 28);
+    const start = e.lho + 30 + nl + el;
+    const raw = buf.subarray(start, start + e.csize);
+
+    let data = raw;
+    if (e.method === 8) {
+      data = await new Promise((res, rej) => {
+        zlib.inflateRaw(raw, (err, out) => (err ? rej(err) : res(out)));
+      });
+    }
+
+    await fs.promises.writeFile(dest, data);
+    done++;
+    if (onProgress && (done % 8 === 0 || done === list.length)) onProgress(done, list.length);
+  }
+
+  return done;
+}
+
+async function installUnpacked(zipPath, assetName, id) {
+  const tag = (String(assetName).match(/unpacked-(.+)\.zip$/i) || [])[1] || ('v' + app.getVersion());
+  const nearExe = portableExe() ? path.dirname(portableExe()) : path.dirname(app.getPath('exe'));
+
+  let outDir = path.join(nearExe, '企业服务大厅-' + tag);
+
+  try {
+    await fs.promises.mkdir(outDir, { recursive: true });
+    await fs.promises.access(outDir, fs.constants.W_OK);
+  } catch (e) {
+    outDir = path.join(app.getPath('userData'), 'app-' + tag);
+  }
+
+  try {
+    dlSet(id, 0, '解压到 ' + outDir);
+    await unzipTo(zipPath, outDir, (done, total) => {
+      dlSet(id, (done / total) * 100, '解压 ' + done + '/' + total);
+    });
+  } catch (e) {
+    dlFinish(id, 'err', '解压失败');
+    msgBox({
+      type: 'error',
+      message: '解压失败',
+      detail: (e.message || String(e)) + '\n\n压缩包在：' + zipPath + '\n也可以自己解压后运行里面的 exe。'
+    });
+    shell.showItemInFolder(zipPath);
+    return;
+  }
+
+  const exe = path.join(outDir, '企业服务大厅.exe');
+  if (!fs.existsSync(exe)) {
+    dlFinish(id, 'err', '解压后没找到主程序');
+    msgBox({ type: 'error', message: '解压后没找到主程序', detail: '已解压到：' + outDir });
+    shell.openPath(outDir);
+    return;
+  }
+
+  dlFinish(id, 'ok', '已解压，正在切换');
+
+  // 用 relaunch：等本进程退干净再起新目录里的 exe，避免和新实例的单实例锁打架
+  try {
+    app.relaunch({ execPath: exe, args: [] });
+  } catch (e) {
+    try { require('child_process').spawn(exe, [], { detached: true, stdio: 'ignore', cwd: outDir }).unref(); } catch (e2) {}
+  }
+
+  quitting = true;
+  setTimeout(() => app.quit(), 300);
 }
 
 /* 便携版没法「就地替换」：exe 被它自己的 launcher 进程占着（EBUSY），
@@ -1277,12 +1425,15 @@ function cleanPortableLeftovers() {
 }
 
 function downloadAndInstall(rel) {
-  const asset = pickAsset(rel);
+  const picked = pickAsset(rel);
 
-  if (!asset) {
+  if (!picked || !picked.asset) {
     if (!(rel.assets || []).some((a) => /\.exe$/i.test(a.name))) shell.openExternal(rel.html_url);
     return;
   }
+
+  const asset = picked.asset;
+  const kind = picked.kind;
 
   const proxy = normalizeProxy(prefs.updateProxy || process.env.PORTAL_UPDATE_PROXY || '');
 
@@ -1379,6 +1530,11 @@ function downloadAndInstall(rel) {
       file.on('finish', () => {
         file.close(() => {
           dlFinish(id, 'ok', '下载完成');
+
+          if (kind === 'unpacked') {
+            installUnpacked(target, asset.name, id);
+            return;
+          }
 
           const runningPortable = !!portableExe();
           const gotPortable = /portable/i.test(asset.name);

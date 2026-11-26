@@ -78,7 +78,8 @@ const dist = path.join(DESK, 'dist');
   const out = path.join(dist, 'portal-unpacked-' + rootPkg.version + '.zip');
   try { fs.rmSync(out, { force: true }); } catch (e) {}
 
-  const argv = ['a', '-tzip', '-mx=1', '-bso0', '-bsp0', out, '*'];
+  // -mcu=on：文件名按 UTF-8 存，中文 exe 名在别的机器上解压才不会乱码
+  const argv = ['a', '-tzip', '-mx=1', '-mcu=on', '-bso0', '-bsp0', out, '*'];
   const bin = fs.existsSync(sevenZip) ? sevenZip : '7z';
   const res = spawnSync(bin, argv, { cwd: src, stdio: 'ignore' });
 
