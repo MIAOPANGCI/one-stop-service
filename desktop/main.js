@@ -1351,69 +1351,146 @@ function unpackTargetDir() {
 
 /* 先解到临时目录，重启进临时目录后再覆盖目标目录：
    正在运行的这份文件谁都不能覆盖，但「从别处跑起来去覆盖它」可以 */
-async function installUnpacked(zipPath, assetName, id) {
-  const tag = (String(assetName).match(/unpacked-(.+)\.zip$/i) || [])[1] || ('v' + app.getVersion());
-
-  const target = unpackTargetDir();
-  const stage = path.join(path.dirname(target), '.portal-stage-' + tag);
-
-  let outDir = stage;
-  try {
-    fs.rmSync(outDir, { recursive: true, force: true });
-    await fs.promises.mkdir(outDir, { recursive: true });
-    await fs.promises.access(outDir, fs.constants.W_OK);
-  } catch (e) {
-    outDir = path.join(app.getPath('userData'), 'app-' + tag);
-    await fs.promises.mkdir(outDir, { recursive: true }).catch(() => {});
-  }
-
-  try {
-    dlSet(id, 0, '解压中…');
-    await unzipTo(zipPath, outDir, (done, total) => {
-      dlSet(id, (done / total) * 100, '解压 ' + done + '/' + total);
-    });
-  } catch (e) {
-    dlFinish(id, 'err', '解压失败');
-    msgBox({
-      type: 'error',
-      message: '解压失败',
-      detail: (e.message || String(e)) + '\n\n压缩包在：' + zipPath + '\n也可以自己解压后运行里面的 exe。'
-    });
-    shell.showItemInFolder(zipPath);
-    return;
-  }
-
-  const exe = path.join(outDir, '企业服务大厅.exe');
-  if (!fs.existsSync(exe)) {
-    dlFinish(id, 'err', '解压后没找到主程序');
-    msgBox({ type: 'error', message: '解压后没找到主程序', detail: '已解压到：' + outDir });
-    shell.openPath(outDir);
-    return;
-  }
-
-  dlFinish(id, 'ok', '已解压，正在安装');
-
-  // 记下来：新进程起来后把临时目录覆盖到目标目录，然后再重启进目标目录
-  prefs.pendingInstall = {
-    stage: outDir,
-    target: target,
-    oldPortable: portableExe() || ''
-  };
-  savePrefs();
-
-  try {
-    app.relaunch({ execPath: exe, args: [] });
-  } catch (e) {
-    try { require('child_process').spawn(exe, [], { detached: true, stdio: 'ignore', cwd: outDir }).unref(); } catch (e2) {}
-  }
-
-  quitting = true;
-  setTimeout(() => app.quit(), 300);
+/* 换进程：先 relaunch，再把窗口全关掉强退。
+   只要本进程赖着不退，relaunch 就不会发生，表现就是「下载完没反应」 */
+/* 便携版没法「就地替换」：exe 被它自己的 launcher 进程占着（EBUSY），
+   运行期间任何进程都覆盖不了，包括它自己 —— 所以不硬来：
+   新版本落到同一个文件夹、用真实版本号命名，重启到它，旧的下次启动再删。
+   文件名带版本号确实不如原地替换好看，但零失败：不碰正在运行的那个文件。 */
+function portableExe() {
+  return process.env.PORTABLE_EXECUTABLE_FILE || '';
 }
 
-/* 启动时把待安装的新版本覆盖到目标目录，再重启进目标目录。
-   返回 true 表示正在切换，调用方别再建窗口 */
-/* 递归覆盖复制。fs.cpSync 在覆盖已存在文件时会抛「errno 0」的怪错误，不用它 */
+/* 切换后要清理的旧 exe：新实例起来再删（那时旧进程已经退了） */
+function cleanReplacedPortable() {
+  const old = prefs.replacedExe;
+  if (!old) return;
+
+  let tries = 0;
+
+  const tick = () => {
+    if (!fs.existsSync(old)) { prefs.replacedExe = ''; savePrefs(); return; }
+    try {
+      fs.unlinkSync(old);
+      prefs.replacedExe = '';
+      savePrefs();
+    } catch (e) {
+      if (++tries < 20) setTimeout(tick, 800);
+    }
+  };
+
+  tick();
+}
+
+/* 老版本可能留下的 .old / .new 残骸 */
+function cleanPortableLeftovers() {
+  const dest = portableExe();
+  if (!dest) return;
+
+  ['.old', '.new'].forEach((suffix) => {
+    const f = dest + suffix;
+    let tries = 0;
+
+    const tick = () => {
+      if (!fs.existsSync(f)) return;
+      try { fs.unlinkSync(f); }
+      catch (e) { if (++tries < 8) setTimeout(tick, 900); }
+    };
+
+    tick();
+  });
+}
+
+/* 同步等待：覆盖被占用时重试之间停一下 */
+function sleepSync(ms) {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    try {
+      require('child_process').execFileSync(process.platform === 'win32' ? 'ping' : 'sleep',
+        process.platform === 'win32' ? ['-n', '1', '127.0.0.1'] : ['0.1'],
+        { stdio: "ignore", windowsHide: true });
+    } catch (e) {
+      break;
+    }
+  }
+}
+
+const zlib = require('zlib');
+
+function zipEntries(buf) {
+  let eocd = -1;
+  const floor = Math.max(0, buf.length - 65558);
+  for (let i = buf.length - 22; i >= floor; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('不是有效的 zip 文件');
+
+  const count = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+  const list = [];
+
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(off) !== 0x02014b50) break;
+    const flag = buf.readUInt16LE(off + 8);
+    const method = buf.readUInt16LE(off + 10);
+    const csize = buf.readUInt32LE(off + 20);
+    const nameLen = buf.readUInt16LE(off + 28);
+    const extraLen = buf.readUInt16LE(off + 30);
+    const cmtLen = buf.readUInt16LE(off + 32);
+    const lho = buf.readUInt32LE(off + 42);
+
+    const rawName = buf.subarray(off + 46, off + 46 + nameLen);
+    let name = rawName.toString('utf8');
+
+    // 没打 UTF-8 标记的，多半是 7-Zip 在中文系统上按 GBK 写的
+    if (!(flag & 0x800)) {
+      try {
+        const gbk = new TextDecoder('gbk').decode(rawName);
+        if (gbk) name = gbk;
+      } catch (e) {}
+    }
+
+    name = name.replace(/\\/g, '/');
+    list.push({ name, method, csize, lho });
+    off += 46 + nameLen + extraLen + cmtLen;
+  }
+
+  return list;
+}
+
+async function unzipTo(zipPath, outDir, onProgress) {
+  const buf = await fs.promises.readFile(zipPath);
+  const list = zipEntries(buf).filter((e) => !/\/$/.test(e.name));
+
+  let done = 0;
+
+  for (const e of list) {
+    if (e.name.indexOf('..') > -1 || e.name.charAt(0) === '/') throw new Error('压缩包里路径不对：' + e.name);
+
+    const dest = path.join(outDir, e.name);
+    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+
+    const nl = buf.readUInt16LE(e.lho + 26);
+    const el = buf.readUInt16LE(e.lho + 28);
+    const start = e.lho + 30 + nl + el;
+    const raw = buf.subarray(start, start + e.csize);
+
+    let data = raw;
+    if (e.method === 8) {
+      data = await new Promise((res, rej) => {
+        zlib.inflateRaw(raw, (err, out) => (err ? rej(err) : res(out)));
+      });
+    }
+
+    await fs.promises.writeFile(dest, data);
+    done++;
+    if (onProgress && (done % 8 === 0 || done === list.length)) onProgress(done, list.length);
+  }
+
+  return done;
+}
+
+/* 递归覆盖复制。fs.cpSync 覆盖已存在文件时会抛「errno 0」的假错误 */
 function copyTree(src, dst) {
   fs.mkdirSync(dst, { recursive: true });
 
@@ -1424,6 +1501,74 @@ function copyTree(src, dst) {
     if (fs.statSync(s).isDirectory()) copyTree(s, d);
     else fs.copyFileSync(s, d);
   });
+}
+
+function restartInto(exePath) {
+  try {
+    app.relaunch({ execPath: exePath, args: [] });
+    updateLog('relaunch -> ' + exePath);
+  } catch (e) {
+    updateLog('relaunch 失败：' + e.message);
+  }
+
+  quitting = true;
+
+  try {
+    BrowserWindow.getAllWindows().forEach(function (w) {
+      try { w.destroy(); } catch (e) {}
+    });
+  } catch (e) {}
+
+  setTimeout(function () { app.quit(); }, 150);
+  setTimeout(function () { app.exit(0); }, 2500);   // 兜底
+}
+
+async function installUnpacked(zipPath, assetName, id) {
+  try {
+    const tag = (String(assetName).match(/unpacked-(.+)\.zip$/i) || [])[1] || ('v' + app.getVersion());
+
+    const target = unpackTargetDir();
+    const stage = path.join(path.dirname(target), '.portal-stage-' + tag);
+
+    updateLog('下载完成，开始解压 ' + assetName + ' -> ' + stage + '（目标 ' + target + '）');
+
+    let outDir = stage;
+    try {
+      fs.rmSync(outDir, { recursive: true, force: true });
+      await fs.promises.mkdir(outDir, { recursive: true });
+      await fs.promises.access(outDir, fs.constants.W_OK);
+    } catch (e) {
+      outDir = path.join(app.getPath('userData'), 'app-' + tag);
+      await fs.promises.mkdir(outDir, { recursive: true }).catch(() => {});
+      updateLog('安装目录不可写，改解到 ' + outDir);
+    }
+
+    dlSet(id, 0, '正在解压…');
+    await unzipTo(zipPath, outDir, (done, total) => {
+      dlSet(id, (done / total) * 100, '解压 ' + done + '/' + total);
+    });
+    updateLog('解压完成：' + outDir);
+
+    const exe = path.join(outDir, '企业服务大厅.exe');
+    if (!fs.existsSync(exe)) throw new Error('解压后没找到主程序');
+
+    dlFinish(id, 'ok', '正在安装…');
+
+    prefs.pendingInstall = { stage: outDir, target: target, oldPortable: portableExe() || '' };
+    savePrefs();
+    updateLog('已记录待安装任务，重启进入临时目录');
+
+    restartInto(exe);
+  } catch (e) {
+    updateLog('安装异常：' + (e && e.message));
+    dlFinish(id, 'err', '安装失败');
+    msgBox({
+      type: 'error',
+      message: '安装失败',
+      detail: ((e && e.message) || String(e)) + '\n\n日志：' + path.join(app.getPath('userData'), 'update.log') +
+        '\n也可以到发布页手动下载 zip，解压覆盖当前目录。'
+    });
+  }
 }
 
 function updateLog(line) {
@@ -1528,16 +1673,9 @@ function applyPendingInstall() {
 
   cleanOldVersionDirs(pi.target);
 
-  try {
-    app.relaunch({ execPath: targetExe, args: [] });
-    quitting = true;
-    updateLog('替换完成，重启进 ' + targetExe);
-    setTimeout(() => app.quit(), 200);
-    return true;
-  } catch (e) {
-    updateLog('重启失败：' + e.message);
-    return false;
-  }
+  updateLog('替换完成，重启进 ' + targetExe);
+  restartInto(targetExe);
+  return true;
 }
 /* 安装成功后临时目录会留下，下次启动慢慢扫掉 */
 function cleanStageDirs() {

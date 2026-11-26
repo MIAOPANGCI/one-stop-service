@@ -944,10 +944,12 @@
     var pen = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
       '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"></path></svg>';
 
-    return '<div class="tile' + (managing ? ' pickable' : '') + (pickedLinks[l.id] ? ' picked' : '') +
+    var svcEdit = sorting && canManageLinks();
+
+    return '<div class="tile' + (svcEdit ? ' pickable' : '') + (pickedLinks[l.id] ? ' picked' : '') +
       '" role="link" tabindex="0" data-id="' + esc(l.id) + '" style="--c:' + esc(color) + '" title="' + esc(tip) + '"' +
-      (sorting ? ' draggable="true"' : '') + '>' +
-      (managing ? '<i class="tile-pick"></i>' : '') +
+      (svcEdit ? ' draggable="true"' : '') + '>' +
+      (svcEdit ? '<i class="tile-pick"></i>' : '') +
       '<span class="tile-ico' + (imgIcon ? ' has-img' : '') + '"' +
         (imgIcon ? '' : ' style="--ico-fs:' + iconFontSize(icon) + 'px"') + '>' +
         (imgIcon ? '<img src="' + esc(imgIcon) + '" alt="">' : esc(icon)) +
@@ -994,7 +996,7 @@
     var parts = order.map(function (cat) {
       var arr = map[cat];
       return '<section class="group">' +
-        '<div class="group-head" data-cat="' + esc(cat) + '"' + (sorting ? ' draggable="true"' : '') + '>' +
+        '<div class="group-head" data-cat="' + esc(cat) + '"' + (sorting && canManageLinks() ? ' draggable="true"' : '') + '>' +
           '<h3>' + esc(cat) + '</h3><span class="group-n">' + arr.length + ' 项</span></div>' +
         '<div class="tiles">' + arr.map(tileHtml).join('') + '</div>' +
       '</section>';
@@ -1106,7 +1108,7 @@
     $('#usersItem').hidden = !perms.users;
 
     $('#addBtn').hidden = !canManageLinks();
-    $('#editBtn').hidden = !canManageLinks();
+    $('#editBtn').hidden = !authUser;
     $('#settingsBtn').hidden = !perms.settings;
   }
 
@@ -1136,11 +1138,11 @@
     return '<section class="sc-sec" id="scSec">' +
       '<div class="sc-head" data-sc-head="1"' + (sorting ? ' draggable="true"' : '') + '>' +
         '<h3>快捷方式 <span class="sc-sub">本机程序</span></h3>' +
-        '<button class="btn-line sm" id="scAddBtn" type="button">＋ 添加程序</button>' +
+        (sorting ? '<button class="btn-line sm" id="scAddBtn" type="button">＋ 添加程序</button>' : '') +
       '</div>' +
       (list.length
         ? '<div class="sc-list" id="scList">' + items + '</div>'
-        : '<p class="sc-empty">还没有快捷方式。点「添加程序」选一个 exe，就能从这里直接启动。</p>') +
+        : '<p class="sc-empty">还没有快捷方式。点右上角「修改」，再点「添加程序」选一个 exe。</p>') +
     '</section>';
   }
 
@@ -1278,7 +1280,14 @@
 
   function syncPickBar() {
     if (!managing) return;
-    $('#pickCount').textContent = '已选 ' + pickedIds().length + ' 个服务';
+
+    var canSvc = canManageLinks();
+    $('#pickCount').textContent = canSvc
+      ? '已选 ' + pickedIds().length + ' 个服务'
+      : '拖动可调整顺序';
+
+    $('#pickDelBtn').hidden = !canSvc;
+    $('#pickAllBtn').hidden = !canSvc;
     $('#pickDelBtn').disabled = !pickedIds().length;
   }
 
@@ -2617,6 +2626,7 @@
       var id = tile.dataset.id;
 
       if (managing) {
+        if (!canManageLinks()) return;
         e.preventDefault();
         togglePick(id);
         return;
