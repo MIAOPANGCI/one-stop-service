@@ -1179,6 +1179,37 @@ body::-webkit-scrollbar {
   transition: opacity .15s, background .15s;
 }
 
+/* 快捷方式的勾选圈，跟服务卡片同一套观感 */
+.sc-pick {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line-2);
+  background: var(--card);
+  z-index: 2;
+  transition: background .15s, border-color .15s;
+}
+
+.sc-pick::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: translate(-50%, -50%) rotate(45deg) scale(0);
+  transition: transform .12s;
+}
+
+.sc-item.picked .sc-pick { background: var(--brand); border-color: var(--brand); }
+.sc-item.picked .sc-pick::after { transform: translate(-50%, -50%) rotate(45deg) scale(1); }
+.sc-item.picked { border-color: var(--brand); }
+
 body.sorting .sc-item { cursor: grab; }
 body.sorting .sc-item.dragging { opacity: .35; }
 body.sorting .sc-head { cursor: grab; }
@@ -1206,9 +1237,12 @@ body.sorting .sc-head h3::after {
   z-index: 120;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px 10px 18px;
+  gap: 8px;
+  padding: 10px 12px 10px 16px;
   border-radius: 14px;
+  /* 按钮多了容易被挤成两行，这里一律不换行 */
+  white-space: nowrap;
+  max-width: calc(100vw - 32px);
   background: var(--card);
   box-shadow: 0 18px 46px -18px rgba(16, 24, 40, .5), 0 0 0 1px var(--line);
 }
@@ -1221,7 +1255,9 @@ body.sorting .sc-head h3::after {
 }
 
 .pick-bar .btn-text,
-.pick-bar .btn-primary { height: 34px; }
+.pick-bar .btn-primary { height: 34px; flex: 0 0 auto; padding: 0 10px; }
+
+.pick-bar > * { flex: 0 0 auto; }
 
 .pick-bar-gap { width: 6px; }
 

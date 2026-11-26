@@ -2447,6 +2447,25 @@ const server = http.createServer(function (req, res) {
     return;
   }
 
+  if (pathname === '/api/me/shortcuts/delete' && method === 'POST') {
+    if (!user) return deny(401, '请先登录');
+
+    readJson(req).then(function (body) {
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      if (!ids.length) return deny(400, '没选中任何快捷方式');
+
+      const drop = {};
+      ids.forEach(function (id) { drop[id] = 1; });
+
+      const before = Array.isArray(user.shortcuts) ? user.shortcuts.length : 0;
+      user.shortcuts = (user.shortcuts || []).filter(function (x) { return !drop[x.id]; });
+
+      persist();
+      sendJson(res, 200, { ok: true, removed: before - user.shortcuts.length, shortcuts: user.shortcuts });
+    }).catch(function (e) { deny(400, e.message); });
+    return;
+  }
+
   const scm = pathname.match(/^\/api\/me\/shortcuts\/([A-Za-z0-9_-]+)$/);
   if (scm) {
     if (!user) return deny(401, '请先登录');

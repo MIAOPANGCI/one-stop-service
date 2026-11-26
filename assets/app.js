@@ -1122,8 +1122,10 @@
         ? '<img src="' + esc(it.icon) + '" alt="">'
         : '<span class="sc-txt">' + esc((it.name || '?').slice(0, 1)) + '</span>';
 
-      return '<div class="sc-item"' + (sorting ? ' draggable="true"' : '') + ' data-id="' + esc(it.id) +
+      return '<div class="sc-item' + (sorting ? ' pickable' : '') + (pickedSc[it.id] ? ' picked' : '') + '"' +
+        (sorting ? ' draggable="true"' : '') + ' data-id="' + esc(it.id) +
         '" data-sc="1" title="' + esc(it.path) + '">' +
+        (sorting ? '<i class="sc-pick"></i>' : '') +
         '<button class="sc-main" type="button" data-act="run">' +
           '<i class="sc-ico">' + ico + '</i>' +
           '<span class="sc-name">' + esc(it.name) + '</span>' +
@@ -1135,7 +1137,6 @@
     return '<section class="sc-sec" id="scSec">' +
       '<div class="sc-head" data-sc-head="1"' + (sorting ? ' draggable="true"' : '') + '>' +
         '<h3>快捷方式 <span class="sc-sub">本机程序</span></h3>' +
-        (sorting ? '<button class="btn-line sm" id="scAddBtn" type="button">＋ 添加程序</button>' : '') +
       '</div>' +
       (list.length
         ? '<div class="sc-list" id="scList">' + items + '</div>'
@@ -1251,7 +1252,7 @@
     sorting = on;
     managing = on;
 
-    if (!on) pickedLinks = {};
+    if (!on) { pickedLinks = {}; pickedSc = {}; }
 
     document.body.classList.toggle('sorting', on);
     document.body.classList.toggle('managing', on);
@@ -1271,6 +1272,12 @@
 
 
 
+  var pickedSc = {};
+
+  function pickedScIds() {
+    return Object.keys(pickedSc).filter(function (id) { return pickedSc[id]; });
+  }
+
   function pickedIds() {
     return Object.keys(pickedLinks).filter(function (id) { return pickedLinks[id]; });
   }
@@ -1279,14 +1286,22 @@
     if (!managing) return;
 
     var canSvc = canManageLinks();
-    $('#pickCount').textContent = canSvc
-      ? '已选 ' + pickedIds().length + ' 个服务'
-      : '拖动可调整顺序';
+    var nSvc = canSvc ? pickedIds().length : 0;
+    var nSc = pickedScIds().length;
 
-    $('#pickDelBtn').hidden = !canSvc;
+    var parts = [];
+    if (nSvc) parts.push(nSvc + ' 个服务');
+    if (nSc) parts.push(nSc + ' 个程序');
+
+    $('#pickCount').textContent = parts.length
+      ? '已选 ' + parts.join(' · ')
+      : (canSvc ? '拖动可调整顺序' : '拖动可调整顺序');
+
+    $('#pickDelBtn').hidden = !(canSvc || (DESKTOP && authUser));
     $('#pickAllBtn').hidden = !canSvc;
     $('#pickAddBtn').hidden = !canSvc;
-    $('#pickDelBtn').disabled = !pickedIds().length;
+    $('#pickAddScBtn').hidden = !(DESKTOP && authUser);
+    $('#pickDelBtn').disabled = !(nSvc + nSc);
   }
 
   function togglePick(id) {
@@ -1296,21 +1311,50 @@
     syncPickBar();
   }
 
+  function togglePickSc(id) {
+    pickedSc[id] = !pickedSc[id];
+    var el = document.querySelector('.sc-item[data-id="' + id + '"]');
+    if (el) el.classList.toggle('picked', !!pickedSc[id]);
+    syncPickBar();
+  }
+
   function deletePicked() {
-    var ids = pickedIds();
-    if (!ids.length) return;
+    var ids = canManageLinks() ? pickedIds() : [];
+    var sids = pickedScIds();
+    if (!ids.length && !sids.length) return;
+
+    var what = [];
+    if (ids.length) what.push(ids.length + ' 个服务');
+    if (sids.length) what.push(sids.length + ' 个程序');
 
     askConfirm({
-      title: '删除选中的 ' + ids.length + ' 个服务？',
-      text: '删除后不可恢复，用户可以重新添加。角色里指向这些服务的授权也会一起清掉。',
+      title: '删除选中的 ' + what.join(' 和 ') + '？',
+      text: '删除后不可恢复。服务删掉后，角色里指向它的授权也会一起清掉；程序只是从你的快捷方式里移除，本机文件不受影响。',
       okText: '删除',
       danger: true
     }).then(function (yes) {
       if (!yes) return;
-      mutate('POST', '/api/links/delete', { ids: ids }, '已删除 ' + ids.length + ' 个服务').then(function (ok) {
-        if (!ok) return;
+
+      var jobs = [];
+
+      if (ids.length) {
+        jobs.push(mutate('POST', '/api/links/delete', { ids: ids }, ''));
+      }
+
+      if (sids.length) {
+        jobs.push(api('POST', '/api/me/shortcuts/delete', { ids: sids }).then(function (d) {
+          if (d && d.shortcuts) state.shortcuts = d.shortcuts;
+        }));
+      }
+
+      Promise.all(jobs).then(function () {
         pickedLinks = {};
+        pickedSc = {};
+        toast('已删除 ' + what.join(' 和 '));
+        loadState();
         setEditing(false);
+      }).catch(function (e) {
+        toast(e.message || '删除失败');
       });
     });
   }
@@ -2608,8 +2652,17 @@
         var scActEarly = e.target.closest('[data-act]');
         var scKindEarly = scActEarly ? scActEarly.getAttribute('data-act') : 'run';
 
-        // 修改模式里只认 ✎（改名/删除），其它点击留给拖动
-        if (sorting && scKindEarly !== 'rename') return;
+        if (sorting) {
+          if (scKindEarly === 'rename') {
+            var itR = (state.shortcuts || []).filter(function (x) { return x.id === scItem.dataset.id; })[0];
+            if (itR) renameShortcut(itR);
+            return;
+          }
+
+          e.preventDefault();
+          togglePickSc(scItem.dataset.id);
+          return;
+        }
 
         var it = (state.shortcuts || []).filter(function (x) { return x.id === scItem.dataset.id; })[0];
         if (!it) return;
@@ -2894,26 +2947,6 @@
 
     $('#settingsBtn').addEventListener('click', openSettings);
 
-    /* 本机快捷方式 */
-    if ($('#scAddBtn')) {
-      $('#scAddBtn').addEventListener('click', addShortcut);
-      $('#scSaveBtn').addEventListener('click', saveShortcutName);
-
-      $('#scList').addEventListener('click', function (e) {
-        var item = e.target.closest('.sc-item');
-        if (!item) return;
-
-        var it = (state.shortcuts || []).filter(function (x) { return x.id === item.dataset.id; })[0];
-        if (!it) return;
-
-        var act = e.target.closest('[data-act]');
-        var kind = act ? act.getAttribute('data-act') : 'run';
-
-        if (kind === 'run') runShortcut(it);
-        else if (kind === 'rename') renameShortcut(it);
-        else removeShortcut(it);
-      });
-    }
 
     /* 游客可见范围 */
     $('#s-requireLogin').addEventListener('change', function () {
@@ -2998,6 +3031,7 @@
 
     $('#pickCancelBtn').addEventListener('click', function () { setEditing(false); });
     $('#pickAddBtn').addEventListener('click', function () { openLinkModal(null); });
+    $('#pickAddScBtn').addEventListener('click', addShortcut);
     $('#pickDelBtn').addEventListener('click', deletePicked);
 
     $('#pickAllBtn').addEventListener('click', function () {
