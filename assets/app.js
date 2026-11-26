@@ -1129,9 +1129,10 @@
     var list = state.shortcuts || [];
 
     var items = list.map(function (it) {
+      var letter = '<span class="sc-txt">' + esc((it.name || '?').slice(0, 1)) + '</span>';
       var ico = it.icon
-        ? '<img src="' + esc(it.icon) + '" alt="">'
-        : '<span class="sc-txt">' + esc((it.name || '?').slice(0, 1)) + '</span>';
+        ? '<img class="sc-img" src="' + esc(it.icon) + '" alt="" data-fb="' + esc((it.name || '?').slice(0, 1)) + '">'
+        : letter;
 
       return '<div class="sc-item' + (sorting ? ' pickable' : '') + (pickedSc[it.id] ? ' picked' : '') + '"' +
         (sorting ? ' draggable="true"' : '') + ' data-id="' + esc(it.id) +
@@ -1161,9 +1162,7 @@
   function refreshWeakIcons() {
     if (iconFixed || !DESKTOP || !window.desktopAPI || !window.desktopAPI.iconsFor) return;
 
-    var weak = (state.shortcuts || []).filter(function (x) {
-      return !x.icon || String(x.icon).length < 900;
-    });
+    var weak = (state.shortcuts || []).filter(function (x) { return !x.icon; });
     if (!weak.length) return;
 
     iconFixed = true;
@@ -3173,6 +3172,18 @@
 
     $('#pickCancelBtn').addEventListener('click', function () { setEditing(false); });
     $('#pickAddBtn').addEventListener('click', function () { openLinkModal(null); });
+    // 图标 data URL 坏了（老的截断数据）就退回首字，不要留一块空白
+    document.addEventListener('error', function (e) {
+      var img = e.target;
+      if (!img || img.tagName !== 'IMG' || !img.classList.contains('sc-img')) return;
+
+      var fb = document.createElement('span');
+      fb.className = 'sc-txt';
+      fb.textContent = img.getAttribute('data-fb') || '?';
+
+      if (img.parentNode) img.parentNode.replaceChild(fb, img);
+    }, true);
+
     $('#pickAddScBtn').addEventListener('click', addShortcut);
     $('#bulkOpenBtn').addEventListener('click', openBulk);
     $('#bulkSaveBtn').addEventListener('click', saveBulk);

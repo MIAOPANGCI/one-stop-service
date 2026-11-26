@@ -1085,38 +1085,49 @@ ipcMain.handle('portal:pick-app', async () => {
   const out = [];
 
   for (const file of r.filePaths) {
-    let iconFile = file;
-    let icon = '';
-
-    // .lnk 直接取图标只会拿到「快捷方式」那个白纸图标，得先读出它指向谁
-    if (/\.lnk$/i.test(file)) {
-      try {
-        const sc = shell.readShortcutLink(file);
-        if (sc) {
-          if (sc.icon) {
-            const iconPath_ = String(sc.icon).split(",")[0].replace(/^"|"$/g, "");
-            if (iconPath_) iconFile = iconPath_;
-          } else if (sc.target) {
-            iconFile = sc.target;
-          }
-        }
-      } catch (err) {}
-    }
-
-    for (const candidate of [iconFile, file]) {
-      try {
-        const img = await app.getFileIcon(candidate, { size: 'large' });
-        if (!img.isEmpty()) { icon = img.toDataURL(); break; }
-      } catch (err) {}
-    }
-
-    out.push({ path: file, name: path.basename(file).replace(/\.[^.]+$/, ''), icon: icon });
+    out.push({
+      path: file,
+      name: path.basename(file).replace(/\.[^.]+$/, ''),
+      icon: await iconForPath(file)
+    });
   }
 
   return out;
 });
 
-/* 已有快捷方式的图标修复：老数据存的是「白纸」图标，按路径重新取一次 */
+/* 取一个 exe/.lnk 的图标。.lnk 指向的 exe 已经不在了就别硬取，
+   否则 Windows 会给「白纸 + 箭头」那个通用快捷方式图标，看着像图标丢了 */
+async function iconForPath(file) {
+  let iconFile = file;
+  let lnkMissing = false;
+
+  if (/\.lnk$/i.test(file)) {
+    try {
+      const sc = shell.readShortcutLink(file);
+      if (sc) {
+        const fromIcon = sc.icon ? String(sc.icon).split(",")[0].replace(/^"|"$/g, "") : "";
+        if (fromIcon && fs.existsSync(fromIcon)) iconFile = fromIcon;
+        else if (sc.target && fs.existsSync(sc.target)) iconFile = sc.target;
+        else lnkMissing = true;
+      }
+    } catch (err) {
+      lnkMissing = true;
+    }
+  }
+
+  if (lnkMissing) return '';
+
+  for (const candidate of [iconFile, file]) {
+    if (!candidate) continue;
+    try {
+      const img = await app.getFileIcon(candidate, { size: 'large' });
+      if (!img.isEmpty()) return img.toDataURL();
+    } catch (err) {}
+  }
+
+  return '';
+}
+
 ipcMain.handle('portal:icons', async (e, list) => {
   const items = Array.isArray(list) ? list.slice(0, 40) : [];
   const out = [];
@@ -1124,34 +1135,10 @@ ipcMain.handle('portal:icons', async (e, list) => {
   for (const it of items) {
     const file = String((it && it.path) || '');
     if (!file) { out.push(''); continue; }
-
-    let iconFile = file;
-    if (/\.lnk$/i.test(file)) {
-      try {
-        const sc = shell.readShortcutLink(file);
-        if (sc) {
-          if (sc.icon) {
-            const p = String(sc.icon).split(',')[0].replace(/^"|"$/g, '');
-            if (p) iconFile = p;
-          } else if (sc.target) {
-            iconFile = sc.target;
-          }
-        }
-      } catch (err) {}
-    }
-
-    let data = '';
-    for (const cand of [iconFile, file]) {
-      try {
-        const img = await app.getFileIcon(cand, { size: 'large' });
-        if (!img.isEmpty()) { data = img.toDataURL(); break; }
-      } catch (err) {}
-    }
-
-    out.push(data);
+    out.push(await iconForPath(file));
   }
 
-  return out;
+  return out.map(function (x) { return x || ''; });
 });
 
 ipcMain.handle('portal:open-path', async (e, target) => {

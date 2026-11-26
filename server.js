@@ -2460,7 +2460,9 @@ const server = http.createServer(function (req, res) {
     readJson(req).then(function (body) {
       const name = cleanText(body.name, 20);
       const p = String(body.path || '').slice(0, 500);
-      const icon = String(body.icon || '').slice(0, 60000);
+      // 截断会产生「半截 base64」，浏览器加载失败 → 图标变成空白，所以宁可拒绝
+      const rawIcon = String(body.icon || '');
+      const icon = rawIcon.length > 200000 ? '' : rawIcon;
 
       if (!name) return deny(400, '给快捷方式起个名字');
       if (!p) return deny(400, '没有拿到程序路径');
@@ -2541,8 +2543,9 @@ const server = http.createServer(function (req, res) {
         }
         if ('path' in body && String(body.path || '').trim()) it.path = String(body.path).slice(0, 500);
         if ('icon' in body) {
-          const icon = String(body.icon || '').slice(0, 60000);
-          it.icon = /^data:image\//i.test(icon) ? icon : '';
+          const rawIcon = String(body.icon || '');
+          const icon = rawIcon.length > 200000 ? '' : rawIcon;
+          it.icon = /^data:image\//i.test(icon) ? icon : (icon ? it.icon : '');
         }
         persist();
         sendJson(res, 200, { ok: true, shortcuts: user.shortcuts });
