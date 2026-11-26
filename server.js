@@ -2653,10 +2653,19 @@ server.listen(PORT, HOST, function () {
   const exposeAll = HOST === '0.0.0.0' || HOST === '::' || HOST === '::0' || HOST === '';
   const localOnly = HOST === '127.0.0.1' || HOST === 'localhost';
 
+  /* 只绑了某块网卡时，localhost 是连不通的 —— 控制台和自动打开都得用这个地址 */
+  const openHost = exposeAll ? '127.0.0.1' : (localOnly ? 'localhost' : HOST);
+
   console.log('');
   console.log('  企业服务大厅已启动');
   console.log('  ------------------------------------------');
-  console.log('  本机访问 : http://localhost:' + PORT + '/');
+
+  if (exposeAll || localOnly) {
+    console.log('  本机访问 : http://' + openHost + ':' + PORT + '/');
+  } else {
+    console.log('  访问地址 : http://' + HOST + ':' + PORT + '/');
+    console.log('             （只监听了这块网卡，localhost 连不上）');
+  }
 
   if (exposeAll) {
     lan.forEach(function (ip) {
@@ -2665,8 +2674,8 @@ server.listen(PORT, HOST, function () {
     if (!lan.length) console.log('  内网访问 : 未检测到局域网地址');
   } else if (localOnly) {
     console.log('  内网访问 : 仅本机（要放开局域网，把 host 改成 0.0.0.0）');
-  } else {
-    console.log('  内网访问 : http://' + HOST + ':' + PORT + '/');
+  } else if (lan.indexOf(HOST) === -1) {
+    console.log('  提醒     : ' + HOST + ' 不是本机网卡地址，确认一下 config.json 里的 host');
   }
 
   console.log('  监听地址 : ' + HOST + ':' + PORT);
@@ -2687,7 +2696,7 @@ server.listen(PORT, HOST, function () {
     }
   }, 1500);
 
-  if (AUTO_OPEN) openBrowser('http://localhost:' + PORT + '/');
+  if (AUTO_OPEN) openBrowser('http://' + openHost + ':' + PORT + '/');
 });
 
 server.on('error', function (e) {

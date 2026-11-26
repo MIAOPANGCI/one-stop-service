@@ -41,6 +41,15 @@ function configPort() {
   return 0;
 }
 
+function configHost() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
+    const h = String(cfg.host || '').trim();
+    return h;
+  } catch (e) {}
+  return '';
+}
+
 function resolvePort(override) {
   const p = Number(override);
   if (Number.isInteger(p) && p >= 1 && p <= 65535) return p;
@@ -50,7 +59,7 @@ function resolvePort(override) {
 }
 
 let PORT = resolvePort();
-let HOST = '';   // 空 = 用 config.json 里的，默认 0.0.0.0
+let HOST = configHost();   // 跟随 config.json；命令行 --host 可以覆盖
 
 /* ---------------- 服务端 ---------------- */
 
