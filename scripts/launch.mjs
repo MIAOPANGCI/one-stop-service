@@ -22,7 +22,7 @@ import path from 'node:path';
 import http from 'node:http';
 import os from 'node:os';
 import readline from 'node:readline';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -231,36 +231,91 @@ function clientDepsReady() {
 }
 
 /* 打开本机客户端。没装依赖不致命：别的机器上装好的客户端照样能连这个服务端 */
-function startClient(onExit) {
-  if (!clientDepsReady()) {
-    console.log('');
-    console.log('  ! 本机没装客户端依赖（cd desktop && npm install），这次不打开客户端');
-    console.log('    已经装好的「企业服务大厅」在别的机器上可以直接连这个服务端');
-    console.log('');
-    return null;
-  }
+/* 本机装好的客户端（安装版 / 目录版 / 桌面上的便携版） */
+function findInstalledClient() {
+  const cands = [];
 
-  log('启动桌面客户端');
-  const proc = spawn(IS_WIN ? 'npm.cmd' : 'npm', ['--prefix', 'desktop', 'start'], {
-    cwd: ROOT,
-    stdio: 'inherit',
-    shell: IS_WIN,
-    env: {
-      ...process.env,
-      // 客户端自己不起服务，这里把刚启动的服务端直接告诉它，首次也不会弹引导
-      PORTAL_SERVER: 'http://127.0.0.1:' + PORT
-    }
-  });
+  const exe = '企业服务大厅.exe';
+  const push = (dir) => { if (dir) cands.push(path.join(dir, exe)); };
 
-  proc.on('exit', (code) => {
-    if (onExit) onExit(code);
-    else process.exit(code || 0);
-  });
+  // NSIS 默认装到 %LOCALAPPDATA%\Programs\<产品名>
+  if (process.env.LOCALAPPDATA) push(path.join(process.env.LOCALAPPDATA, 'Programs', '企业服务大厅'));
+  if (process.env.ProgramFiles) push(path.join(process.env.ProgramFiles, '企业服务大厅'));
+  if (process.env['ProgramFiles(x86)']) push(path.join(process.env['ProgramFiles(x86)'], '企业服务大厅'));
 
-  return proc;
+  // 目录版挨着源码放的、或者开发机打包出来的
+  push(path.join(ROOT, '企业服务大厅'));
+  push(path.join(ROOT, 'desktop', 'dist', 'win-unpacked'));
+
+  const hit = cands.find((p) => { try { return fs.existsSync(p); } catch (e) { return false; } });
+  if (hit) return hit;
+
+  // 桌面上放的便携版：文件名带版本号，且此刻没有被正在运行的客户端占用
+  try {
+    const desktop = path.join(os.homedir(), 'Desktop');
+    const f = fs.readdirSync(desktop)
+      .filter((n) => /^portal-portable-.*\.exe$/i.test(n))
+      .sort()
+      .pop();
+    if (f) return path.join(desktop, f);
+  } catch (e) {}
+
+  return '';
 }
 
-function waitExit(proc) {
+function startClient(onExit, serverUrl, exePath) {
+  const installed = exePath || findInstalledClient();
+
+  if (installed) {
+    log('启动桌面客户端：' + installed);
+
+    const proc = spawn(installed, [], {
+      cwd: path.dirname(installed),
+      detached: false,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        // 让它直接连这个服务端，不用再填地址
+        ...(serverUrl ? { PORTAL_SERVER: serverUrl } : {})
+      }
+    });
+
+    proc.on("exit", (code) => {
+      if (onExit) onExit(code);
+      else process.exit(code || 0);
+    });
+
+    return proc;
+  }
+
+  // 没装 exe，但源码目录里有依赖：用开发模式跑
+  if (clientDepsReady()) {
+    log('启动桌面客户端（开发模式）');
+    const proc = spawn(IS_WIN ? "npm.cmd" : "npm", ["--prefix", "desktop", "start"], {
+      cwd: ROOT,
+      stdio: "inherit",
+      shell: IS_WIN,
+      env: {
+        ...process.env,
+        ...(serverUrl ? { PORTAL_SERVER: serverUrl } : {})
+      }
+    });
+
+    proc.on("exit", (code) => {
+      if (onExit) onExit(code);
+      else process.exit(code || 0);
+    });
+
+    return proc;
+  }
+
+  console.log('');
+  console.log('  ! 这台机器上没找到桌面客户端');
+  console.log('    装一个就行：发布包里的 portal-setup-x.y.z.exe（双击装完即可）');
+  console.log('    或者把目录版解压到本目录下的「企业服务大厅」文件夹');
+  console.log('');
+  return null;
+}function waitExit(proc) {
   return new Promise((resolve) => proc.on('exit', resolve));
 }
 
@@ -275,7 +330,22 @@ async function run(mode, openPage) {
 
   if (mode === 'client') {
     log('只打开桌面客户端（连已有的服务端）');
-    if (!startClient()) process.exit(1);
+
+    // 本机这个端口上有服务端就把地址直接给它，没有就让它自己填
+    const alive = await ping();
+    const url = alive.ok ? 'http://' + probeHost() + ':' + PORT : '';
+    if (url) console.log('  连：' + url);
+
+    let exe = findInstalledClient();
+
+    if (!exe) {
+      // 装在别处也能用：直接问路径，比让用户去翻注册表简单
+      const typed = (await ask('  客户端 exe 路径（回车 = 跳过）：') || '').replace(/^"|"$/g, '').trim();
+      if (typed && fs.existsSync(typed)) exe = typed;
+      else if (typed) console.log('  这个路径不存在：' + typed);
+    }
+
+    if (!startClient(undefined, url, exe)) process.exit(1);
     return;
   }
 
@@ -286,7 +356,7 @@ async function run(mode, openPage) {
     const client = startClient((code) => {
       if (srv) { try { srv.kill(); } catch (e) {} }
       process.exit(code || 0);
-    });
+    }, 'http://127.0.0.1:' + PORT);
 
     if (client) {
       // 客户端开着的时候也要盯着服务端，不然升级后就没人把它拉起来了
@@ -337,8 +407,6 @@ async function menu() {
   console.log('');
   console.log('    回车   打开大厅（服务端 + 浏览器）');
   console.log('    1      只开服务端（给其他电脑的客户端连）');
-  console.log('    2      只开桌面客户端（连已在运行的服务端）');
-  console.log('    p      换个端口');
   console.log('    q      退出');
   console.log('');
 
@@ -346,7 +414,6 @@ async function menu() {
 
   if (ans === 'q' || ans === 'quit' || ans === 'exit') { closeAsk(); return; }
 
-  // 只开服务端：谁来连都行，但不自动弹浏览器
   if (ans === '1') {
     const ips = localIPs();
     if (ips.length) console.log('  其他电脑连：' + ips.map(function (ip) { return 'http://' + ip + ':' + PORT; }).join('  或  '));
@@ -354,29 +421,7 @@ async function menu() {
     return run('server', false);
   }
 
-  if (ans === '2') return run('client');
-
-  if (ans === 'p') {
-    const p = await ask('  端口号 [默认 ' + PORT + ']：');
-    PORT = resolvePort(p || PORT);
-    log('端口 ' + PORT + '，打开大厅');
-    return run('server', true);
-  }
-
-  if (ans === '' || ans === '3' || ans === 'y') {
-    log('启动服务端并打开大厅');
-    return run('server', true);
-  }
-
-  // 老习惯按 1/2/3/4/5 的，也尽量给出合理结果
-  if (ans === '4') return run('client');
-  if (ans === '5') {
-    const p = await ask('  端口号 [默认 ' + PORT + ']：');
-    PORT = resolvePort(p || PORT);
-    return run('server', true);
-  }
-
-  log('没看懂「' + ans + '」，按「打开大厅」处理');
+  log('启动服务端并打开大厅');
   return run('server', true);
 }
 
