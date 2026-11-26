@@ -1383,21 +1383,35 @@ async function unzipTo(zipPath, outDir, onProgress) {
   return done;
 }
 
+/* 目录版装到哪：便携版旁边建一个「企业服务大厅」文件夹；
+   已经在这个文件夹里跑，就更新它自己 */
+function unpackTargetDir() {
+  if (portableExe()) return path.join(path.dirname(portableExe()), '企业服务大厅');
+
+  const own = path.dirname(app.getPath('exe'));
+  return path.basename(own) === '企业服务大厅' ? own : path.join(own, '企业服务大厅');
+}
+
+/* 先解到临时目录，重启进临时目录后再覆盖目标目录：
+   正在运行的这份文件谁都不能覆盖，但「从别处跑起来去覆盖它」可以 */
 async function installUnpacked(zipPath, assetName, id) {
   const tag = (String(assetName).match(/unpacked-(.+)\.zip$/i) || [])[1] || ('v' + app.getVersion());
-  const nearExe = portableExe() ? path.dirname(portableExe()) : path.dirname(app.getPath('exe'));
 
-  let outDir = path.join(nearExe, '企业服务大厅-' + tag);
+  const target = unpackTargetDir();
+  const stage = path.join(path.dirname(target), '.portal-stage-' + tag);
 
+  let outDir = stage;
   try {
+    fs.rmSync(outDir, { recursive: true, force: true });
     await fs.promises.mkdir(outDir, { recursive: true });
     await fs.promises.access(outDir, fs.constants.W_OK);
   } catch (e) {
     outDir = path.join(app.getPath('userData'), 'app-' + tag);
+    await fs.promises.mkdir(outDir, { recursive: true }).catch(() => {});
   }
 
   try {
-    dlSet(id, 0, '解压到 ' + outDir);
+    dlSet(id, 0, '解压中…');
     await unzipTo(zipPath, outDir, (done, total) => {
       dlSet(id, (done / total) * 100, '解压 ' + done + '/' + total);
     });
@@ -1420,9 +1434,16 @@ async function installUnpacked(zipPath, assetName, id) {
     return;
   }
 
-  dlFinish(id, 'ok', '已解压，正在切换');
+  dlFinish(id, 'ok', '已解压，正在安装');
 
-  // 用 relaunch：等本进程退干净再起新目录里的 exe，避免和新实例的单实例锁打架
+  // 记下来：新进程起来后把临时目录覆盖到目标目录，然后再重启进目标目录
+  prefs.pendingInstall = {
+    stage: outDir,
+    target: target,
+    oldPortable: portableExe() || ''
+  };
+  savePrefs();
+
   try {
     app.relaunch({ execPath: exe, args: [] });
   } catch (e) {
@@ -1431,6 +1452,70 @@ async function installUnpacked(zipPath, assetName, id) {
 
   quitting = true;
   setTimeout(() => app.quit(), 300);
+}
+
+/* 启动时把待安装的新版本覆盖到目标目录，再重启进目标目录。
+   返回 true 表示正在切换，调用方别再建窗口 */
+/* 递归覆盖复制。fs.cpSync 在覆盖已存在文件时会抛「errno 0」的怪错误，不用它 */
+function copyTree(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+
+  fs.readdirSync(src).forEach(function (name) {
+    const s = path.join(src, name);
+    const d = path.join(dst, name);
+
+    if (fs.statSync(s).isDirectory()) copyTree(s, d);
+    else fs.copyFileSync(s, d);
+  });
+}
+
+function applyPendingInstall() {
+  const pi = prefs.pendingInstall;
+  if (!pi || !pi.stage || !pi.target) return false;
+
+  const stageExe = path.join(pi.stage, '企业服务大厅.exe');
+  const targetExe = path.join(pi.target, '企业服务大厅.exe');
+
+  prefs.pendingInstall = null;
+  savePrefs();
+
+  if (!fs.existsSync(stageExe)) return false;
+
+  let ok = false;
+
+  if (!fs.existsSync(pi.target)) {
+    try {
+      fs.mkdirSync(path.dirname(pi.target), { recursive: true });
+      fs.renameSync(pi.stage, pi.target);
+      ok = true;
+    } catch (e) {}
+  } else {
+    for (let i = 0; i < 25; i++) {
+      try {
+        copyTree(pi.stage, pi.target);
+        ok = true;
+        break;
+      } catch (e) {
+        sleepSync(400);
+      }
+    }
+  }
+
+  if (!ok) return false;   // 覆盖失败就先用临时目录里的版本跑着
+
+  // 老的便携版 exe 可以删了（已经不在了）
+  if (pi.oldPortable && fs.existsSync(pi.oldPortable)) {
+    try { fs.unlinkSync(pi.oldPortable); } catch (e) {}
+  }
+
+  try {
+    app.relaunch({ execPath: targetExe, args: [] });
+    quitting = true;
+    setTimeout(() => app.quit(), 200);
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 /* 便携版没法「就地替换」：exe 被它自己的 launcher 进程占着（EBUSY），
@@ -1479,6 +1564,24 @@ function cleanPortableLeftovers() {
 
     tick();
   });
+}
+
+/* 安装成功后临时目录会留下，下次启动慢慢扫掉 */
+function cleanStageDirs() {
+  setTimeout(function () {
+    const bases = [];
+    try { bases.push(path.dirname(unpackTargetDir())); } catch (e) {}
+
+    bases.forEach(function (base) {
+      try {
+        fs.readdirSync(base)
+          .filter(function (n) { return n.indexOf('.portal-stage-') === 0; })
+          .forEach(function (n) {
+            try { fs.rmSync(path.join(base, n), { recursive: true, force: true }); } catch (e) {}
+          });
+      } catch (e) {}
+    });
+  }, 8000);
 }
 
 function downloadAndInstall(rel) {
@@ -1708,6 +1811,10 @@ if (!app.requestSingleInstanceLock()) {
     buildMenu();
     cleanReplacedPortable();
     cleanPortableLeftovers();
+
+    // 目录版更新：先把新文件覆盖到安装目录，再重启过去，别留着两个版本
+    if (applyPendingInstall()) return;
+    cleanStageDirs();
 
     // 连得上就进大厅，连不上（含第一次）先填地址
     await boot();
