@@ -1510,7 +1510,9 @@ const server = http.createServer(function (req, res) {
   if (method === 'OPTIONS') { res.writeHead(204).end(); return; }
 
   /* ---------- 启动模式：只让该进来的人进来 ---------- */
-  if (MODE !== 'both') {
+  // /api/ping 例外：启动器靠它判断「服务端起没起来、是什么模式」，
+  // 各模式都拦的话，--mode web / desktop 会被误判成没启动
+  if (MODE !== 'both' && pathname !== '/api/ping') {
     const fromDesktop = DESKTOP_UA.test(String(req.headers['user-agent'] || ''));
     const blocked = MODE === 'desktop' ? !fromDesktop : fromDesktop;
 

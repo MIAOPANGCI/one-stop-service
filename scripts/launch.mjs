@@ -74,7 +74,8 @@ function ping() {
   return new Promise((resolve) => {
     const req = http.get(
       { host: probeHost(), port: PORT, path: '/api/ping', timeout: 900,
-        headers: { 'User-Agent': 'CorpPortalDesktop/launcher' } },
+        // 不能用 CorpPortalDesktop 开头：--mode web 会把桌面端 UA 拦成 403
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CorpPortalLauncher/1.0)' } },
       (res) => {
         let body = '';
         res.setEncoding('utf8');
@@ -208,7 +209,8 @@ async function ensureServer(serverMode, openPage) {
 
   if (await waitUp(10000)) return proc;
 
-  console.error('\n  ✗ 服务端起不来，检查端口 ' + PORT + ' 是否被别的程序占用\n');
+  console.error('\n  ✗ 连不上 http://' + probeHost() + ':' + PORT + '/api/ping');
+  console.error('    端口可能被别的程序占着，或者服务端启动后就退出了（看上面的报错）\n');
   return proc;
 }
 
