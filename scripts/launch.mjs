@@ -422,29 +422,75 @@ function closeAsk() {
   if (rl) { try { rl.close(); } catch (e) {} rl = null; }
 }
 
+/* 第一次启动没有 config.json：在这里问清楚，写一份出来，
+   省得用户自己去找文件改、还改错格式 */
+async function ensureConfig() {
+  const file = path.join(ROOT, 'config.json');
+  if (fs.existsSync(file)) return;
+
+  console.log('');
+  console.log('  第一次启动，先定一下服务端地址');
+  console.log('  ------------------------------------------');
+
+  const ips = localIPs();
+  if (ips.length) console.log('  本机地址：' + ips.join(' / '));
+  console.log('');
+
+  const p = await ask('  端口 [8080]：');
+  const port = Number(p) >= 1 && Number(p) <= 65535 ? Number(p) : 8080;
+
+  const h = (await ask('  监听地址 [0.0.0.0 = 局域网都能连；127.0.0.1 = 只本机]：') || '').trim();
+  const host = h || '0.0.0.0';
+
+  const cfg = {
+    _说明: '改完保存并重启服务生效。host 填 0.0.0.0 局域网可访问，填 127.0.0.1 只有本机能访问；port 取值 1-65535；mode 取 both（网页+桌面）/ web（仅网页）/ desktop（仅桌面客户端）。',
+    port: port,
+    host: host,
+    mode: 'both'
+  };
+
+  try {
+    fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+    console.log('');
+    console.log('  已生成 config.json：' + host + ':' + port);
+    console.log('');
+  } catch (e) {
+    console.log('  ! 写不了 config.json（' + e.message + '），这次先用 ' + host + ':' + port + ' 启动');
+  }
+
+  PORT = port;
+  HOST = host;
+}
+
 async function menu() {
+  await ensureConfig();
+
   console.log('');
   console.log('  ============================================');
-  console.log('    企业服务大厅');
+  console.log('    企业服务大厅  ' + (HOST || '0.0.0.0') + ':' + PORT);
   console.log('  ============================================');
   console.log('');
-  console.log('    回车   打开大厅（服务端 + 浏览器）');
-  console.log('    1      只开服务端（给其他电脑的客户端连）');
+  console.log('    1      只开 web 服务端（浏览器能访问，客户端连不进来）');
+  console.log('    2      只开客户端服务端（只服务桌面客户端，浏览器打开会被拒绝）');
+  console.log('    3      web 服务端 + 客户端服务端（两种都能连）');
   console.log('    q      退出');
   console.log('');
 
-  const ans = (await ask('  请选择 [回车 = 打开大厅]：') || '').toLowerCase();
+  const ans = (await ask('  请选择 [回车 = 3 并打开浏览器]：') || '3').toLowerCase();
 
   if (ans === 'q' || ans === 'quit' || ans === 'exit') { closeAsk(); return; }
 
   if (ans === '1') {
-    const ips = localIPs();
-    if (ips.length) console.log('  其他电脑连：' + ips.map(function (ip) { return 'http://' + ip + ':' + PORT; }).join('  或  '));
-    log('只开服务端，端口 ' + PORT + '（关掉这个窗口服务就停了）');
-    return run('server', false);
+    log('只开 web 服务端，端口 ' + PORT);
+    return run('web', false);
   }
 
-  log('启动服务端并打开大厅');
+  if (ans === '2') {
+    log('只开客户端服务端，端口 ' + PORT);
+    return run('desktop', false);
+  }
+
+  log('web 服务端 + 客户端服务端，端口 ' + PORT + '，顺手打开浏览器');
   return run('server', true);
 }
 
