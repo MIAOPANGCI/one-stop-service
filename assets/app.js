@@ -6,7 +6,12 @@
 (function () {
   'use strict';
 
-  var PALETTE = ['#2fa795', '#1c6fd6', '#5b6bd6', '#d97706', '#c0392b', '#0f766e', '#334155', '#7c3aed', '#0891b2', '#be185d'];
+  var PALETTE = [
+    '#2fa795', '#0f766e', '#14b8a6', '#059669', '#16a34a', '#65a30d',
+    '#ca8a04', '#d97706', '#ea580c', '#dc2626', '#c0392b', '#be185d',
+    '#db2777', '#7c3aed', '#5b6bd6', '#1c6fd6', '#0891b2', '#0284c7',
+    '#475569', '#334155', '#64748b', '#78716c', '#111827', '#7c2d12'
+  ];
   var BRAND_THEMES = [
     { name: '松石绿', color: '#2fa795' },
     { name: '深海蓝', color: '#1c6fd6' },
@@ -956,7 +961,7 @@
         (r.url ? '<i class="tile-dot ' + r.net + '"></i>' : '') +
       '</span>' +
       '<span class="tile-name">' + esc(l.name) + '</span>' +
-      (canManageLinks() && !sorting && !managing ? '<button class="tile-edit" type="button" data-act="edit" title="编辑">' + pen + '</button>' : '') +
+      (svcEdit ? '<button class="tile-edit" type="button" data-act="edit" title="编辑">' + pen + '</button>' : '') +
     '</div>';
   }
 
@@ -1175,21 +1180,90 @@
     }).catch(function () {});
   }
 
+  /* ---------------- 批量添加服务 ---------------- */
+  function parseBulk(text) {
+    var out = [];
+
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      line = line.trim();
+      if (!line || line.charAt(0) === '#') return;
+
+      var parts = line.split(/[,，\t]|\s{2,}/).map(function (x) { return x.trim(); }).filter(Boolean);
+      if (parts.length === 1) parts = line.split(/\s+/);
+
+      var name = parts[0] || '';
+      var url = parts[1] || '';
+      var cat = parts[2] || '';
+
+      if (!name) return;
+      if (url && !/^https?:\/\//i.test(url)) url = 'http://' + url;
+
+      out.push({ name: name, url: url, cat: cat });
+    });
+
+    return out;
+  }
+
+  function openBulk() {
+    $('#bulkText').value = '';
+    $('#bulkInfo').textContent = '';
+    closeModal($('#linkModal'));
+    openModal($('#bulkModal'));
+    setTimeout(function () { $('#bulkText').focus(); }, 80);
+  }
+
+  function saveBulk() {
+    var items = parseBulk($('#bulkText').value).filter(function (x) { return x.url; });
+
+    if (!items.length) {
+      toast('至少要有一行「名称, 地址」');
+      return;
+    }
+
+    api('POST', '/api/links/bulk', { items: items }).then(function (d) {
+      closeModal($('#bulkModal'));
+      toast('已添加 ' + d.added + ' 个服务' + (d.skipped ? '，跳过 ' + d.skipped + ' 行' : ''));
+      loadState();
+    }).catch(function (e) {
+      toast(e.message || '添加失败');
+    });
+  }
+
   function addShortcut() {
     if (!window.desktopAPI || !window.desktopAPI.pickApp) return;
 
     window.desktopAPI.pickApp().then(function (picked) {
       if (!picked) return;
 
-      return api('POST', '/api/me/shortcuts', {
-        name: picked.name,
-        path: picked.path,
-        icon: picked.icon || ''
-      }).then(function (d) {
-        state.shortcuts = d.shortcuts || [];
-        render();
-        toast('已添加「' + picked.name + '」');
-      });
+      // 支持一次选多个：挨个 POST，最后一个刷新界面
+      var list = Array.isArray(picked) ? picked : [picked];
+      if (!list.length) return;
+
+      var done = 0;
+      var last = null;
+
+      var next = function (i) {
+        if (i >= list.length) {
+          if (last && last.shortcuts) state.shortcuts = last.shortcuts;
+          render();
+          toast(list.length > 1 ? '已添加 ' + done + ' 个程序' : '已添加「' + list[0].name + '」');
+          return;
+        }
+
+        api('POST', '/api/me/shortcuts', {
+          name: list[i].name,
+          path: list[i].path,
+          icon: list[i].icon || ''
+        }).then(function (d) {
+          done++;
+          last = d || last;
+          next(i + 1);
+        }).catch(function (e) {
+          toast(e.message || '添加失败');
+        });
+      };
+
+      next(0);
     }).catch(function (e) {
       toast(e.message || '添加失败');
     });
@@ -1491,7 +1565,11 @@
     $('#colorPick').innerHTML = PALETTE.map(function (c) {
       return '<button class="pick color' + (c === formColor ? ' on' : '') + '" type="button" data-color="' + c +
         '" style="color:' + c + '"><i style="background:' + c + '"></i></button>';
-    }).join('');
+    }).join('') +
+      '<label class="pick color pick-custom" title="自定义颜色">' +
+        '<i style="background:' + (PALETTE.indexOf(formColor) > -1 ? 'conic-gradient(#ef4444,#eab308,#22c55e,#3b82f6,#a855f7,#ef4444)' : formColor) + '"></i>' +
+        '<input type="color" id="colorCustom" value="' + (/^#[0-9a-fA-F]{6}$/.test(formColor) ? formColor : '#2fa795') + '">' +
+      '</label>';
   }
 
   function buildBrandPicker() {
@@ -2682,6 +2760,13 @@
 
       if (managing) {
         if (!canManageLinks()) return;
+
+        if (e.target.closest('.tile-edit')) {
+          e.preventDefault();
+          var lk = state.links.find(function (x) { return x.id === id; });
+          if (lk) openLinkModal(lk);
+          return;
+        }
         e.preventDefault();
         togglePick(id);
         return;
@@ -3032,6 +3117,19 @@
     $('#pickCancelBtn').addEventListener('click', function () { setEditing(false); });
     $('#pickAddBtn').addEventListener('click', function () { openLinkModal(null); });
     $('#pickAddScBtn').addEventListener('click', addShortcut);
+    $('#bulkOpenBtn').addEventListener('click', openBulk);
+    $('#bulkSaveBtn').addEventListener('click', saveBulk);
+
+    $('#bulkText').addEventListener('input', function () {
+      var n = parseBulk(this.value).filter(function (x) { return x.url; }).length;
+      $('#bulkInfo').textContent = n ? '将添加 ' + n + ' 个服务' : '';
+    });
+
+    $('#colorPick').addEventListener('input', function (e) {
+      if (e.target.id !== 'colorCustom') return;
+      formColor = e.target.value.toLowerCase();
+      buildColorPicker();
+    });
     $('#pickDelBtn').addEventListener('click', deletePicked);
 
     $('#pickAllBtn').addEventListener('click', function () {

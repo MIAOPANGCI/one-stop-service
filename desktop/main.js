@@ -1071,8 +1071,8 @@ ipcMain.handle('portal:open-window', (e, url, title) => {
 ipcMain.handle('portal:pick-app', async () => {
   const parent = (win && !win.isDestroyed()) ? win : undefined;
   const opts = {
-    title: '选择要添加的程序',
-    properties: ['openFile'],
+    title: '选择要添加的程序（可多选）',
+    properties: ['openFile', 'multiSelections'],
     filters: [
       { name: '程序', extensions: ['exe', 'lnk', 'bat', 'cmd', 'url'] },
       { name: '所有文件', extensions: ['*'] }
@@ -1080,35 +1080,40 @@ ipcMain.handle('portal:pick-app', async () => {
   };
 
   const r = parent ? await dialog.showOpenDialog(parent, opts) : await dialog.showOpenDialog(opts);
-  if (r.canceled || !r.filePaths || !r.filePaths[0]) return null;
+  if (r.canceled || !r.filePaths || !r.filePaths.length) return null;
 
-  const file = r.filePaths[0];
-  let iconFile = file;
-  let icon = '';
+  const out = [];
 
-  // .lnk 直接取图标只会拿到「快捷方式」那个白纸图标，得先读出它指向谁
-  if (/\.lnk$/i.test(file)) {
-    try {
-      const sc = shell.readShortcutLink(file);
-      if (sc) {
-        if (sc.icon) {
-          const iconPath_ = String(sc.icon).split(',')[0].replace(/^"|"$/g, '');
-          if (iconPath_) iconFile = iconPath_;
-        } else if (sc.target) {
-          iconFile = sc.target;
+  for (const file of r.filePaths) {
+    let iconFile = file;
+    let icon = '';
+
+    // .lnk 直接取图标只会拿到「快捷方式」那个白纸图标，得先读出它指向谁
+    if (/\.lnk$/i.test(file)) {
+      try {
+        const sc = shell.readShortcutLink(file);
+        if (sc) {
+          if (sc.icon) {
+            const iconPath_ = String(sc.icon).split(",")[0].replace(/^"|"$/g, "");
+            if (iconPath_) iconFile = iconPath_;
+          } else if (sc.target) {
+            iconFile = sc.target;
+          }
         }
-      }
-    } catch (err) {}
+      } catch (err) {}
+    }
+
+    for (const candidate of [iconFile, file]) {
+      try {
+        const img = await app.getFileIcon(candidate, { size: 'large' });
+        if (!img.isEmpty()) { icon = img.toDataURL(); break; }
+      } catch (err) {}
+    }
+
+    out.push({ path: file, name: path.basename(file).replace(/\.[^.]+$/, ''), icon: icon });
   }
 
-  for (const candidate of [iconFile, file]) {
-    try {
-      const img = await app.getFileIcon(candidate, { size: 'large' });
-      if (!img.isEmpty()) { icon = img.toDataURL(); break; }
-    } catch (err) {}
-  }
-
-  return { path: file, name: path.basename(file).replace(/\.[^.]+$/, ''), icon: icon };
+  return out;
 });
 
 /* 已有快捷方式的图标修复：老数据存的是「白纸」图标，按路径重新取一次 */

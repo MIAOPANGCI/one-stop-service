@@ -1364,6 +1364,31 @@ body.managing .tile:hover { outline-color: var(--line-2); }
 
 .muted-warn { color: var(--danger); }
 
+/* 顶栏那个「修改」：不要实心大按钮，安静一点 */
+#editBtn {
+  background: transparent;
+  color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font-weight: 500;
+}
+
+#editBtn:hover { background: var(--field); color: var(--ink); filter: none; }
+#editBtn.on { background: var(--brand); color: #fff; box-shadow: none; font-weight: 600; }
+
+/* 修改模式里铅笔常驻显示 */
+body.sorting .tile-edit { opacity: 1; transform: none; }
+
+/* 自定义底色 */
+.pick-custom { position: relative; overflow: hidden; }
+.pick-custom input[type="color"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+
 /* ==================== 排序模式 ==================== */
 .nav-btn-ghost {
   background: var(--field);

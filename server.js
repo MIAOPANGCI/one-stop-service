@@ -153,6 +153,9 @@ const ROLE_LABEL = { admin: '管理员', editor: '编辑者', viewer: '浏览者
 
 const PALETTE_FALLBACK = '#2fa795';
 
+// 批量添加时轮着用的底色
+const BULK_COLORS = ['#2fa795', '#1c6fd6', '#5b6bd6', '#d97706', '#c0392b', '#0f766e', '#334155', '#7c3aed', '#0891b2', '#be185d'];
+
 /* ------------------------------------------------------------
  * 通用工具
  * ---------------------------------------------------------- */
@@ -1979,7 +1982,8 @@ const server = http.createServer(function (req, res) {
   }
 
   /* ---------- 单条链接 ---------- */
-  const lm = pathname.match(/^\/api\/links\/([A-Za-z0-9_-]+)$/);
+  // bulk 是批量接口（在下面单独处理），别被当成某个服务的 id
+  const lm = pathname.match(/^\/api\/links\/(?!bulk$)([A-Za-z0-9_-]+)$/);
   if (lm) {
     const id = lm[1];
     const idx = db.links.findIndex(function (l) { return l.id === id; });
@@ -2391,6 +2395,52 @@ const server = http.createServer(function (req, res) {
         users: db.users.map(publicUser),
         roles: roleLabels()
       });
+    }).catch(function (e) { deny(400, e.message); });
+    return;
+  }
+
+  /* ---------- 批量新增服务 ---------- */
+  if (pathname === '/api/links/bulk' && method === 'POST') {
+    if (!user) return deny(401, '请先登录');
+    if (!userCaps(user).links) return deny(403, '当前角色没有这个操作权限');
+
+    readJson(req).then(function (body) {
+      const items = Array.isArray(body.items) ? body.items.slice(0, 200) : [];
+      if (!items.length) return deny(400, '没有要添加的内容');
+
+      const seen = {};
+      db.links.forEach(function (l) { seen[String(l.urlWan || l.urlLan || '').toLowerCase()] = 1; });
+
+      let added = 0;
+      let skipped = 0;
+
+      items.forEach(function (raw) {
+        const name = cleanText(raw.name, 40);
+        const url = String(raw.url || '').trim().slice(0, 300);
+        const cat = cleanText(raw.cat, 12) || '未分类';
+        if (!name || !url) { skipped++; return; }
+
+        const key = url.toLowerCase();
+        if (seen[key]) { skipped++; return; }
+        seen[key] = 1;
+
+        db.links.push({
+          id: uid('l'),
+          name: name,
+          desc: '',
+          cat: cat,
+          urlLan: '',
+          urlWan: url,
+          icon: (name || '?').slice(0, 1),
+          color: BULK_COLORS[db.links.length % BULK_COLORS.length],
+          noFrame: false,
+          createdAt: nowIso()
+        });
+        added++;
+      });
+
+      if (added) persist();
+      sendJson(res, 200, { ok: true, added: added, skipped: skipped, links: db.links });
     }).catch(function (e) { deny(400, e.message); });
     return;
   }

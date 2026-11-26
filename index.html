@@ -233,6 +233,7 @@
     </form>
     <div class="modal-foot">
       <button class="btn-text danger" id="deleteBtn" type="button" hidden>删除此服务</button>
+      <button class="btn-text" id="bulkOpenBtn" type="button">批量添加</button>
       <div class="spacer"></div>
       <button class="btn-text" type="button" data-close>取消</button>
       <button class="btn-primary" id="saveBtn" type="button">保存</button>
@@ -695,6 +696,31 @@
       <div class="spacer"></div>
       <button class="btn-text" type="button" data-close>取消</button>
       <button class="btn-primary" id="scSaveBtn" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="bulkModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true" style="max-width:560px">
+    <div class="modal-head">
+      <h3>批量添加服务</h3>
+      <button class="x" type="button" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <label class="field">
+        <span>一行一个，格式：名称, 地址, 分类</span>
+        <textarea id="bulkText" rows="10" placeholder="ERP 系统, http://192.168.1.10:8080, 办公协同
+OA, http://oa.corp.local
+MES, 172.16.8.21:9000, 生产"></textarea>
+      </label>
+      <small class="hint">分类可以不写；地址不带 http:// 会自动补上；重复地址会跳过。</small>
+      <p class="hint" id="bulkInfo"></p>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn-text" type="button" data-close>取消</button>
+      <button class="btn-primary" id="bulkSaveBtn" type="button">批量添加</button>
     </div>
   </div>
 </div>
