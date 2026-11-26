@@ -1187,8 +1187,6 @@
   }
 
   /* ---------------- 批量添加服务 ---------------- */
-  var bulkColor = '';
-
   // 表头关键词 → 字段名
   var BULK_COLS = [
     { key: 'name', re: /^(名称|名字|服务名|system|name)$/i },
@@ -1248,45 +1246,16 @@
     }).filter(function (x) { return x.name && (x.urlLan || x.urlWan); });
   }
 
-  function buildBulkColors() {
-    var cols = [''].concat(PALETTE.slice(0, 10));
-
-    $('#bulkColors').innerHTML = cols.map(function (c) {
-      var on = (c === bulkColor) ? ' on' : '';
-      var label = c ? '' : '自动';
-      return '<button class="pick color' + on + '" type="button" data-bulkcolor="' + c + '"' +
-        ' style="color:' + (c || '#cbd5e1') + '"><i style="background:' + (c || '#e2e8f0') + '"></i>' +
-        (label ? '<em style="font-size:10px">' + label + '</em>' : '') + '</button>';
-    }).join('');
-  }
-
   function openBulk() {
     $('#bulkText').value = '';
     $('#bulkInfo').textContent = '';
-    $('#bulkCat').value = '';
-    $('#bulkIcon').value = '';
-    bulkColor = '';
-    buildBulkColors();
     closeModal($('#linkModal'));
     openModal($('#bulkModal'));
     setTimeout(function () { $('#bulkText').focus(); }, 80);
   }
 
   function bulkItems() {
-    var cat = ($('#bulkCat').value || '').trim();
-    var icon = ($('#bulkIcon').value || '').trim();
-
-    return parseBulk($('#bulkText').value).map(function (x) {
-      return {
-        name: x.name,
-        urlLan: x.urlLan,
-        urlWan: x.urlWan,
-        cat: x.cat || cat,
-        desc: x.desc,
-        icon: x.icon || icon,
-        color: x.color || bulkColor
-      };
-    });
+    return parseBulk($('#bulkText').value);
   }
 
   function saveBulk() {
@@ -3214,14 +3183,6 @@
     };
 
     $('#bulkText').addEventListener('input', bulkPreview);
-    $('#bulkCat').addEventListener('input', bulkPreview);
-
-    $('#bulkColors').addEventListener('click', function (e) {
-      var b = e.target.closest('[data-bulkcolor]');
-      if (!b) return;
-      bulkColor = b.getAttribute('data-bulkcolor');
-      buildBulkColors();
-    });
 
     $('#colorPick').addEventListener('input', function (e) {
       if (e.target.id !== 'colorCustom') return;

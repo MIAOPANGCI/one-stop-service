@@ -1383,17 +1383,62 @@ body.managing .tile:hover { outline-color: var(--line-2); }
 body.sorting .tile-edit { opacity: 1; transform: none; }
 
 /* 自定义底色 */
-/* 批量添加：默认值一行三格 */
-.bulk-defaults {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
+/* ---------------- 批量添加 ---------------- */
+.bulk-card { width: 620px; max-width: 100%; }
+
+.bulk-body { display: flex; flex-direction: column; gap: 12px; }
+
+.bulk-label {
+  font-size: 13px;
+  color: var(--ink-2);
 }
 
-.bulk-defaults .field:last-child { grid-column: 1 / -1; }
+.bulk-text {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--field);
+  color: var(--ink);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, "Microsoft YaHei", monospace;
+  font-size: 13px;
+  line-height: 1.95;
+  resize: vertical;
+  outline: none;
+  transition: border-color .16s, box-shadow .16s;
+}
 
-.pick em { font-style: normal; color: var(--ink-3); }
+.bulk-text:focus {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line-2));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent);
+  background: var(--card);
+}
+
+.bulk-text::placeholder { color: var(--ink-3); }
+
+.bulk-help {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand) 5%, var(--field));
+  font-size: 12.5px;
+  line-height: 2;
+  color: var(--ink-2);
+}
+
+.bulk-help b {
+  display: inline-block;
+  min-width: 46px;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+.bulk-count {
+  margin: 0;
+  min-height: 18px;
+  font-size: 12.5px;
+  color: var(--brand);
+  font-weight: 600;
+}
 
 .pick-custom { position: relative; overflow: hidden; }
 .pick-custom input[type="color"] {

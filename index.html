@@ -702,34 +702,26 @@
 
 <div class="modal" id="bulkModal" hidden>
   <div class="modal-mask" data-close></div>
-  <div class="modal-card" role="dialog" aria-modal="true" style="max-width:640px">
+  <div class="modal-card bulk-card" role="dialog" aria-modal="true">
     <div class="modal-head">
       <h3>批量添加服务</h3>
       <button class="x" type="button" data-close>✕</button>
     </div>
-    <div class="modal-body">
-      <div class="bulk-defaults">
-        <label class="field">
-          <span>分类</span>
-          <input id="bulkCat" placeholder="留空则用每行自己的">
-        </label>
-        <label class="field">
-          <span>图标</span>
-          <input id="bulkIcon" placeholder="emoji / 首字" maxlength="4">
-        </label>
-        <div class="field">
-          <span>底色</span>
-          <div class="pick-row" id="bulkColors"></div>
-        </div>
+
+    <div class="modal-body bulk-body">
+      <label class="bulk-label" for="bulkText">每行一个服务</label>
+      <textarea id="bulkText" class="bulk-text" rows="9" spellcheck="false"
+        placeholder="ERP 系统, 192.168.1.10:8080, erp.example.com, 办公协同, 订单与库存&#10;OA, 172.16.8.21:9000"></textarea>
+
+      <div class="bulk-help">
+        <div><b>列顺序</b>　名称、内网地址、外网地址、分类、描述（后面的可省）</div>
+        <div><b>分隔符</b>　逗号或 Tab —— 从 Excel 里直接复制两三列过来就能用</div>
+        <div><b>表头</b>　第一行写「名称、内网、外网、分类、描述、图标、底色」可按列名对号入座</div>
       </div>
 
-      <label class="field">
-        <span>每行一个服务，用 Tab 或逗号分列</span>
-        <textarea id="bulkText" rows="9" placeholder="名称, 内网地址, 外网地址, 分类, 描述&#10;ERP 系统, http://192.168.1.10:8080, https://erp.example.com, 办公协同, 订单与库存&#10;OA, 172.16.8.21:9000"></textarea>
-      </label>
-      <small class="hint">列顺序：名称 / 内网地址 / 外网地址 / 分类 / 描述（后三列可省）。直接从 Excel 复制整列也能识别，第一行写列名（名称、内网、外网、分类、描述、图标、底色）会按列名对号入座。</small>
-      <p class="hint" id="bulkInfo"></p>
+      <p class="bulk-count" id="bulkInfo"></p>
     </div>
+
     <div class="modal-foot">
       <div class="spacer"></div>
       <button class="btn-text" type="button" data-close>取消</button>
