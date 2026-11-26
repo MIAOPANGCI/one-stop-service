@@ -1071,7 +1071,6 @@
       ? '共 ' + guestLinks + ' 个内部系统入口，登录后即可访问。'
       : '使用公司账号登录后，即可访问全部内部系统入口。';
 
-    $('#addBtn').hidden = true;
     $('#netPill').hidden = true;
     $('#settingsBtn').hidden = true;
     $('#userMenu').hidden = true;
@@ -1092,7 +1091,6 @@
     // 没登录：藏掉添加/设置，右上角换成「登录」
     if (!authUser) {
       menu.hidden = true;
-      $('#addBtn').hidden = true;
       $('#settingsBtn').hidden = true;
       if ($('#loginBtn')) $('#loginBtn').hidden = false;
       return;
@@ -1107,7 +1105,6 @@
     $('#dropRole').textContent = authUser.username + ' · ' + (roles[authUser.role] || authUser.role);
     $('#usersItem').hidden = !perms.users;
 
-    $('#addBtn').hidden = !canManageLinks();
     $('#editBtn').hidden = !authUser;
     $('#settingsBtn').hidden = !perms.settings;
   }
@@ -1131,7 +1128,7 @@
           '<i class="sc-ico">' + ico + '</i>' +
           '<span class="sc-name">' + esc(it.name) + '</span>' +
         '</button>' +
-        '<button class="sc-more" type="button" data-act="rename" title="重命名或删除">✎</button>' +
+        (sorting ? '<button class="sc-more" type="button" data-act="rename" title="重命名或删除">✎</button>' : '') +
       '</div>';
     }).join('');
 
@@ -1288,6 +1285,7 @@
 
     $('#pickDelBtn').hidden = !canSvc;
     $('#pickAllBtn').hidden = !canSvc;
+    $('#pickAddBtn').hidden = !canSvc;
     $('#pickDelBtn').disabled = !pickedIds().length;
   }
 
@@ -2607,7 +2605,11 @@
 
       var scItem = e.target.closest('.sc-item');
       if (scItem) {
-        if (sorting) return;
+        var scActEarly = e.target.closest('[data-act]');
+        var scKindEarly = scActEarly ? scActEarly.getAttribute('data-act') : 'run';
+
+        // 修改模式里只认 ✎（改名/删除），其它点击留给拖动
+        if (sorting && scKindEarly !== 'rename') return;
 
         var it = (state.shortcuts || []).filter(function (x) { return x.id === scItem.dataset.id; })[0];
         if (!it) return;
@@ -2677,7 +2679,6 @@
     });
 
     /* 新增 */
-    $('#addBtn').addEventListener('click', function () { openLinkModal(null); });
     $('#emptyAddBtn').addEventListener('click', function () { openLinkModal(null); });
 
     /* 弹窗关闭 */
@@ -2996,6 +2997,7 @@
     /* ---- 批量删除 ---- */
 
     $('#pickCancelBtn').addEventListener('click', function () { setEditing(false); });
+    $('#pickAddBtn').addEventListener('click', function () { openLinkModal(null); });
     $('#pickDelBtn').addEventListener('click', deletePicked);
 
     $('#pickAllBtn').addEventListener('click', function () {

@@ -1118,27 +1118,32 @@ body::-webkit-scrollbar {
   position: relative;
   display: flex;
   align-items: center;
+  gap: 2px;
+  padding-right: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  transition: border-color .16s, box-shadow .16s;
+}
+
+.sc-item:hover {
+  border-color: var(--line-2);
+  box-shadow: 0 10px 24px -18px rgba(16, 24, 40, .5);
 }
 
 .sc-main {
   display: flex;
   align-items: center;
   gap: 9px;
-  height: 40px;
-  padding: 0 14px 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
+  height: 38px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
   color: var(--ink);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
-  transition: border-color .16s, transform .12s, box-shadow .16s;
-}
-
-.sc-main:hover {
-  border-color: var(--line-2);
-  box-shadow: 0 10px 24px -18px rgba(16, 24, 40, .5);
 }
 
 .sc-ico {
@@ -1170,12 +1175,9 @@ body::-webkit-scrollbar {
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
+  opacity: .55;
   transition: opacity .15s, background .15s;
 }
-
-/* 修改模式下卡片是拿来拖的，✎ 先藏起来，改名/删除在普通模式里点 ✎ */
-body.sorting .sc-more { display: none; }
 
 body.sorting .sc-item { cursor: grab; }
 body.sorting .sc-item.dragging { opacity: .35; }
