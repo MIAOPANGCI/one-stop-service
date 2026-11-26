@@ -1334,19 +1334,35 @@ function pickAsset(rel) {
   });
 
   if (ans === 2) return null;
-  if (ans === 1) return askWhichBuild(rel, setup, portable, unpacked);
 
-  return best;
+  const chosen = ans === 1 ? askWhichBuild(rel, setup, portable, unpacked) : best;
+  if (!chosen) return null;
+
+  // 安装版装到系统里，再来一份目录版就成了两份，容易搞不清哪个在跑
+  if (kind === 'setup' && chosen.kind === 'unpacked') {
+    msgBox({
+      type: 'info',
+      message: '安装版请用安装包更新',
+      detail: '你现在是安装版（装在系统里）。目录版会在旁边另建一个文件夹，' +
+        '装完就有两份，双击哪个全看运气。\n\n要换成目录版，请先卸载安装版再装目录版。'
+    });
+    return null;
+  }
+
+  return chosen;
 }
 
 /* 目录版装到哪：便携版旁边建一个「企业服务大厅」文件夹；
    已经在这个文件夹里跑，就更新它自己 */
 function unpackTargetDir() {
-  if (portableExe()) return path.join(path.dirname(portableExe()), '企业服务大厅');
+  // 目录版统一装在「企业服务大厅」这个固定名字的文件夹里。
+  // 老版本可能叫「企业服务大厅-1.5.8」这种，更新完会被整个删掉。
+  let base = portableExe() ? path.dirname(portableExe()) : path.dirname(app.getPath('exe'));
 
-  // 目录版：装在哪就更新哪，别管文件夹叫什么名字
-  // （1.5.2 那版解到「企业服务大厅-1.5.2」，按名字判断会另建一个新文件夹）
-  return path.dirname(app.getPath('exe'));
+  // 正跑在 .portal-stage-xxx 里的话，安装目录在它的上一级
+  if (path.basename(base).indexOf('.portal-stage-') === 0) base = path.dirname(base);
+
+  return path.join(base, '企业服务大厅');
 }
 
 /* 先解到临时目录，重启进临时目录后再覆盖目标目录：
@@ -1503,6 +1519,20 @@ function copyTree(src, dst) {
   });
 }
 
+/* 安装版更新：退出客户端，把舞台让给安装程序，不需要 relaunch 回去 */
+function quitForInstall() {
+  quitting = true;
+
+  try {
+    BrowserWindow.getAllWindows().forEach(function (w) {
+      try { w.destroy(); } catch (e) {}
+    });
+  } catch (e) {}
+
+  setTimeout(function () { app.quit(); }, 150);
+  setTimeout(function () { app.exit(0); }, 2500);
+}
+
 function restartInto(exePath) {
   try {
     app.relaunch({ execPath: exePath, args: [] });
@@ -1554,7 +1584,12 @@ async function installUnpacked(zipPath, assetName, id) {
 
     dlFinish(id, 'ok', '正在安装…');
 
-    prefs.pendingInstall = { stage: outDir, target: target, oldPortable: portableExe() || '' };
+    prefs.pendingInstall = {
+      stage: outDir,
+      target: target,
+      oldDir: path.dirname(app.getPath('exe')),
+      oldPortable: portableExe() || ''
+    };
     savePrefs();
     updateLog('已记录待安装任务，重启进入临时目录');
 
@@ -1620,40 +1655,69 @@ function applyPendingInstall() {
   let ok = false;
   let lastErr = '';
 
-  if (!fs.existsSync(pi.target)) {
-    try {
-      fs.mkdirSync(path.dirname(pi.target), { recursive: true });
-      fs.renameSync(pi.stage, pi.target);
-      ok = true;
-      updateLog('目标不存在，临时目录直接改名为安装目录');
-    } catch (e) {
-      lastErr = e.message;
-    }
-  }
-
-  if (!ok && fs.existsSync(pi.target)) {
-    for (let i = 0; i < 25; i++) {
+  // 目标目录如果就是临时目录，说明已经是新版了
+  if (path.resolve(pi.stage) === path.resolve(pi.target)) {
+    ok = true;
+  } else if (path.resolve(pi.target) === path.resolve(path.dirname(app.getPath('exe')))) {
+    // 正跑在这个目录里，删不得也搬不得，退回逐文件覆盖
+    for (let i = 0; i < 20; i++) {
       try {
         copyTree(pi.stage, pi.target);
         ok = true;
-        updateLog('已覆盖到 ' + pi.target);
         break;
       } catch (e) {
         lastErr = e.message;
         sleepSync(400);
       }
     }
+  } else {
+    // 老目录整个删掉（此刻老版本已经退出，文件不再被占用）
+    if (fs.existsSync(pi.target)) {
+      for (let i = 0; i < 25; i++) {
+        try {
+          fs.rmSync(pi.target, { recursive: true, force: true });
+          updateLog('已删除旧目录 ' + pi.target);
+          break;
+        } catch (e) {
+          lastErr = e.message;
+          sleepSync(400);
+        }
+      }
+    }
+
+    // 把临时目录改名成目标目录：同盘改名是瞬时的，不用拷 200MB
+    try {
+      fs.mkdirSync(path.dirname(pi.target), { recursive: true });
+      fs.renameSync(pi.stage, pi.target);
+      ok = true;
+      updateLog('临时目录已改名为安装目录');
+    } catch (e) {
+      lastErr = e.message;
+    }
+
+    // 改名失败（跨盘、被占用）就退回拷贝
+    if (!ok) {
+      for (let i = 0; i < 20; i++) {
+        try {
+          copyTree(pi.stage, pi.target);
+          ok = true;
+          updateLog('已拷贝到 ' + pi.target);
+          break;
+        } catch (e) {
+          lastErr = e.message;
+          sleepSync(400);
+        }
+      }
+    }
   }
 
   if (!ok) {
-    updateLog('覆盖失败：' + lastErr);
-    // 先继续用临时目录里的版本跑，下次启动再试一次
+    updateLog('安装失败：' + lastErr);
     msgBox({
       type: 'warning',
-      message: '暂时没能替换原目录',
-      detail: '新版本已经在运行，但原目录 ' + pi.target + ' 里的文件没被替换。\n\n' +
-        (lastErr ? '原因：' + lastErr + '\n\n' : '') +
-        '多半是那个目录里的文件还被占用。关掉所有客户端窗口后重新打开，会自动再试一次。'
+      message: '暂时没能装到 ' + pi.target,
+      detail: (lastErr ? '原因：' + lastErr + '\n\n' : '') +
+        '新版本已经在运行（临时目录里）。关掉所有客户端窗口再打开，会自动再试一次。'
     });
     return false;
   }
@@ -1661,7 +1725,17 @@ function applyPendingInstall() {
   prefs.pendingInstall = null;
   savePrefs();
 
-  // 老的便携版 exe 可以删了（已经不在了）
+  // 老版本所在的文件夹整个删掉（只删真正装过客户端的目录，别误删桌面）
+  if (pi.oldDir && path.resolve(pi.oldDir) !== path.resolve(pi.target) &&
+      fs.existsSync(path.join(pi.oldDir, '企业服务大厅.exe'))) {
+    try {
+      fs.rmSync(pi.oldDir, { recursive: true, force: true });
+      updateLog('已删除老版本目录 ' + pi.oldDir);
+    } catch (e) {
+      updateLog('老目录删不掉：' + e.message);
+    }
+  }
+
   if (pi.oldPortable && fs.existsSync(pi.oldPortable)) {
     try {
       fs.unlinkSync(pi.oldPortable);
@@ -1673,10 +1747,11 @@ function applyPendingInstall() {
 
   cleanOldVersionDirs(pi.target);
 
-  updateLog('替换完成，重启进 ' + targetExe);
+  updateLog('安装完成，启动新版：' + targetExe);
   restartInto(targetExe);
   return true;
 }
+
 /* 安装成功后临时目录会留下，下次启动慢慢扫掉 */
 function cleanStageDirs() {
   setTimeout(function () {
@@ -1848,9 +1923,7 @@ function downloadAndInstall(rel) {
             prefs.replacedExe = dest;
             savePrefs();
 
-            try { app.relaunch({ execPath: saved, args: [] }); } catch (e) {}
-            quitting = true;
-            app.quit();
+            restartInto(saved);
             return;
           }
 
@@ -1875,7 +1948,7 @@ function downloadAndInstall(rel) {
 
           if (go === 0) {
             spawn(target, [], { detached: true, stdio: 'ignore' }).unref();
-            app.quit();
+            quitForInstall();
           } else {
             shell.showItemInFolder(target);
           }

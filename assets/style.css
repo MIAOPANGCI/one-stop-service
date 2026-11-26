@@ -88,9 +88,10 @@ a { color: inherit; }
   z-index: 60;
   height: var(--nav-h);
   display: grid;
-  /* 右边那一列不给 1fr：按钮多的时候 1fr 不够宽，justify-self:end 会让内容
-     往左顶出格子，压到搜索框上。改成按内容宽度，搜索框自己去让位 */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 430px) auto;
+  /* 左右两列等宽，搜索框才会真的居中。
+     之前改成 minmax(0,430px) auto 是为了防右侧按钮压过来，
+     结果左右不等宽，搜索框整体偏右了 */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   column-gap: 18px;
   padding: 0 30px;
@@ -176,10 +177,9 @@ a { color: inherit; }
 /* 搜索 */
 .nav-search {
   position: relative;
-  width: 100%;
+  width: min(430px, 34vw);
   max-width: 430px;
   min-width: 160px;
-  justify-self: center;
 }
 .nav-search svg {
   position: absolute;
@@ -229,7 +229,7 @@ a { color: inherit; }
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: max-content;
+  min-width: 0;
 }
 
 .net-pill {
@@ -1650,20 +1650,27 @@ body.sorting .group-head h3::after {
     display: flex;
     gap: 12px;
   }
-  .nav-left { flex: 0 1 auto; overflow: hidden; }
+  /* 左右两栏等宽，搜索框才会落在正中间；
+     之前左边 auto、右边固定，搜索框被挤得偏右 */
+  .nav-left { flex: 1 1 0; min-width: 0; overflow: hidden; }
   .nav-search {
-    flex: 1 1 0;
-    width: auto;
+    flex: 0 1 auto;
+    width: min(430px, 36vw);
     max-width: 430px;
     min-width: 128px;
-    margin: 0 auto;
+    margin: 0 4px;
   }
-  .nav-right { flex: 0 0 auto; }
+  .nav-right { flex: 1 1 0; min-width: 0; justify-content: flex-end; }
   .nav-left-tools, .net-pill { flex-shrink: 0; }
 }
 
 @media (max-width: 1080px) {
   .nav-left-tools { display: none; }
+}
+
+/* 再窄一点，搜索框主动收一收，别和右边按钮贴住 */
+@media (max-width: 980px) {
+  .nav-search { width: min(430px, 30vw); }
 }
 
 @media (max-width: 860px) {
