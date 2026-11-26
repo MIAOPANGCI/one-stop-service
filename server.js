@@ -351,8 +351,23 @@ function userCaps(u) {
 }
 
 /* 能看到哪些服务：管理员看全部；给了「全部可见」看全部；否则按分类 + 单个服务授权 */
+function guestVisibleLinks() {
+  const st = db.settings;
+  if (st.guestSeeAll !== false) return db.links;
+
+  const ids = {};
+  (st.guestLinks || []).forEach(function (id) { ids[id] = 1; });
+
+  const cats = {};
+  (st.guestCats || []).forEach(function (c) { cats[c] = 1; });
+
+  return db.links.filter(function (l) {
+    return ids[l.id] || cats[(l.cat || '未分类').trim()];
+  });
+}
+
 function visibleLinks(u) {
-  if (!u) return [];
+  if (!u) return guestVisibleLinks();
   const r = roleOf(u);
   if (!r || r.id === 'admin' || r.seeAll) return db.links;
 
@@ -410,6 +425,9 @@ const DEFAULT_SETTINGS = {
   heroGlow: true,           // 首屏壁纸上的光晕
   glowColor: '',            // 空 = 默认青绿
   catOrder: [],             // 分类的显示顺序（名字数组，没列到的按出现顺序排在后面）
+  guestSeeAll: true,        // 游客（未登录）能看到全部服务吗
+  guestLinks: [],           // 游客能看的具体服务
+  guestCats: [],            // 游客能看的分类
   heroShadow: true,         // 首屏文字阴影（浅底白光晕、深底暗影）
   heroShadowStrength: 45,   // 0-100
   netMode: 'auto',
@@ -1542,6 +1560,7 @@ const server = http.createServer(function (req, res) {
       state: {
         settings: db.settings,
         links: visibleLinks(user),
+        shortcuts: user ? (user.shortcuts || []) : [],
         version: VERSION,
         lan: lanUrls(),
         mode: MODE
@@ -1857,6 +1876,11 @@ const server = http.createServer(function (req, res) {
       if ('netMode' in body) s.netMode = ['auto', 'lan', 'wan'].indexOf(body.netMode) > -1 ? body.netMode : 'auto';
       if ('openInNewTab' in body) s.openInNewTab = Boolean(body.openInNewTab);
       if ('heroGlow' in body) s.heroGlow = Boolean(body.heroGlow);
+      if ('guestSeeAll' in body) s.guestSeeAll = body.guestSeeAll !== false;
+      if (Array.isArray(body.guestLinks)) s.guestLinks = body.guestLinks.map(String).slice(0, 500);
+      if (Array.isArray(body.guestCats)) {
+        s.guestCats = body.guestCats.map(function (x) { return String(x || '').trim().slice(0, 12); }).filter(Boolean).slice(0, 60);
+      }
       if ('catOrder' in body) {
         s.catOrder = (Array.isArray(body.catOrder) ? body.catOrder : [])
           .map(function (x) { return String(x || '').trim().slice(0, 12); })
@@ -2362,6 +2386,66 @@ const server = http.createServer(function (req, res) {
       });
     }).catch(function (e) { deny(400, e.message); });
     return;
+  }
+
+  /* ---------- 我自己的本机快捷方式 ---------- */
+  if (pathname === '/api/me/shortcuts' && method === 'POST') {
+    if (!user) return deny(401, '请先登录');
+
+    readJson(req).then(function (body) {
+      const name = cleanText(body.name, 20);
+      const p = String(body.path || '').slice(0, 500);
+      const icon = String(body.icon || '').slice(0, 60000);
+
+      if (!name) return deny(400, '给快捷方式起个名字');
+      if (!p) return deny(400, '没有拿到程序路径');
+
+      if (!Array.isArray(user.shortcuts)) user.shortcuts = [];
+      if (user.shortcuts.length >= 30) return deny(400, '最多 30 个快捷方式');
+
+      const item = {
+        id: uid('sc'),
+        name: name,
+        path: p,
+        icon: /^data:image\//i.test(icon) ? icon : '',
+        createdAt: nowIso()
+      };
+
+      user.shortcuts.push(item);
+      persist();
+      sendJson(res, 200, { ok: true, shortcuts: user.shortcuts });
+    }).catch(function (e) { deny(400, e.message); });
+    return;
+  }
+
+  const scm = pathname.match(/^\/api\/me\/shortcuts\/([A-Za-z0-9_-]+)$/);
+  if (scm) {
+    if (!user) return deny(401, '请先登录');
+    if (!Array.isArray(user.shortcuts)) user.shortcuts = [];
+
+    const idx = user.shortcuts.findIndex(function (x) { return x.id === scm[1]; });
+    if (idx < 0) return deny(404, '没找到这个快捷方式');
+
+    if (method === 'PUT') {
+      readJson(req).then(function (body) {
+        const it = user.shortcuts[idx];
+        if ('name' in body) {
+          const name = cleanText(body.name, 20);
+          if (name) it.name = name;
+        }
+        if ('path' in body && String(body.path || '').trim()) it.path = String(body.path).slice(0, 500);
+        persist();
+        sendJson(res, 200, { ok: true, shortcuts: user.shortcuts });
+      }).catch(function (e) { deny(400, e.message); });
+      return;
+    }
+
+    if (method === 'DELETE') {
+      user.shortcuts.splice(idx, 1);
+      persist();
+      sendJson(res, 200, { ok: true, shortcuts: user.shortcuts });
+      return;
+    }
   }
 
   /* ---------- 批量新增用户 ---------- */

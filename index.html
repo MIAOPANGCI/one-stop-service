@@ -123,6 +123,15 @@
 
   <div id="groups"></div>
 
+  <section class="sc-sec" id="scSec" hidden>
+    <div class="sc-head">
+      <h3>快捷方式 <span class="sc-sub">本机程序</span></h3>
+      <button class="btn-line sm" id="scAddBtn" type="button">＋ 添加程序</button>
+    </div>
+    <div class="sc-list" id="scList"></div>
+    <p class="sc-empty" id="scEmpty" hidden>还没有快捷方式。点「添加程序」选一个 exe，就能从这里直接启动。</p>
+  </section>
+
     <div class="locked" id="locked" hidden>
       <div class="locked-glow" aria-hidden="true"></div>
       <div class="locked-badge">
@@ -175,7 +184,13 @@
         </label>
         <label class="field">
           <span>所属分类</span>
-          <input id="f-cat" type="text" list="catList" placeholder="办公协同" maxlength="12">
+          <div class="combo">
+            <input id="f-cat" type="text" placeholder="选一个或直接输入" maxlength="12" autocomplete="off">
+            <button class="combo-btn" id="catBtn" type="button" title="选择已有分类">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
+            </button>
+            <div class="combo-pop" id="catPop" hidden></div>
+          </div>
           <datalist id="catList"></datalist>
         </label>
       </div>
@@ -549,6 +564,16 @@
                                     <small class="hint">仅管理员可修改</small>
                                   </label>
 
+                                  <div class="field" id="guestScope" hidden>
+                                    <span>游客能看哪些服务</span>
+                                    <div class="radio-row">
+                                      <label class="radio-item"><input type="radio" name="guestAll" value="1"><span>全部服务</span></label>
+                                      <label class="radio-item"><input type="radio" name="guestAll" value="0"><span>只给勾选的</span></label>
+                                    </div>
+                                    <div class="vis-box" id="guestBox" hidden></div>
+                                    <small class="hint">未登录访客只能看到这些；勾分类等于勾中该分类下全部服务。</small>
+                                  </div>
+
                                   <div class="io-row">
                                     <button class="btn-line sm" id="exportBtn" type="button">导出</button>
                                     <button class="btn-line sm" id="importBtn" type="button">导入</button>
@@ -663,6 +688,28 @@
   <span class="pick-bar-gap"></span>
   <button class="btn-text" id="pickCancelBtn" type="button">取消</button>
   <button class="btn-primary is-danger" id="pickDelBtn" type="button">删除选中</button>
+</div>
+
+<div class="modal" id="scModal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true" style="max-width:400px">
+    <div class="modal-head">
+      <h3>重命名快捷方式</h3>
+      <button class="x" type="button" data-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <label class="field">
+        <span>名称</span>
+        <input id="sc-name" type="text" maxlength="20" placeholder="比如：ERP 客户端">
+      </label>
+      <p class="hint" id="scPath"></p>
+    </div>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn-text" type="button" data-close>取消</button>
+      <button class="btn-primary" id="scSaveBtn" type="button">保存</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast" hidden></div>

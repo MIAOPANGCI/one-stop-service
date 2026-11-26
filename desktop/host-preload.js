@@ -29,6 +29,24 @@ contextBridge.exposeInMainWorld('desktopAPI', {
     return ipcRenderer.invoke('portal:set-close-behavior', String(action || ''), !!confirm);
   },
 
+  // 独立窗口打开（「不支持内嵌」的服务用）
+  openWindow(url, title) {
+    return ipcRenderer.invoke('portal:open-window', String(url || ''), String(title || ''));
+  },
+
+  // 本机程序快捷方式
+  pickApp() {
+    return ipcRenderer.invoke('portal:pick-app');
+  },
+
+  openPath(target) {
+    return ipcRenderer.invoke('portal:open-path', String(target || ''));
+  },
+
+  // 把当前生效的明暗主题告诉主进程（下载浮窗要跟着变）
+  setTheme(theme) {
+    ipcRenderer.send('portal:theme', String(theme || ''));
+  },
   // 更新下载代理（空 = 直连）
   setUpdateProxy(v) {
     return ipcRenderer.invoke('portal:set-update-proxy', String(v || ''));

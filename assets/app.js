@@ -57,6 +57,7 @@
       heroShadow: true, heroShadowStrength: 45, updatedAt: null
     },
     links: [],
+    shortcuts: [],
     version: '',
     lan: []
   };
@@ -171,6 +172,7 @@
     }
     if (data && data.user !== undefined) authUser = data.user;
     if (data && data.perms) perms = data.perms;
+    if (data && data.state && Array.isArray(data.state.shortcuts)) state.shortcuts = data.state.shortcuts;
     if (data && data.roles) roles = data.roles;
     online = true;
     paintOffline(null);
@@ -358,10 +360,15 @@
     var r = pickUrl(link);
     if (!r.url) { toast('「' + link.name + '」还没有配置访问地址'); return; }
 
+    // 「不支持内嵌」的服务：桌面端开独立窗口，网页版换浏览器标签
+    if (link.noFrame) {
+      if (DESKTOP && window.desktopAPI.openWindow) { window.desktopAPI.openWindow(r.url, link.name); return; }
+      openInNewTab(r.url);
+      return;
+    }
+
     var mode = state.settings.openMode || (state.settings.openInNewTab === false ? 'same' : 'new');
     if (mode === 'tab') {
-      // 桌面壳里 webview 能正常内嵌，这个标记只对网页版生效
-      if (link.noFrame && !DESKTOP) { openInNewTab(r.url); return; }
       openTab(link.name, r.url);
       return;
     }
@@ -837,6 +844,32 @@
     return { list: sortCatNames(out), count: seen };
   }
 
+  /* ---------------- 分类下拉（自绘，比原生 datalist 好看） ---------------- */
+  function paintCatPop() {
+    var c = categories();
+    var cur = ($('#f-cat').value || '').trim();
+
+    var rows = c.list.map(function (n) {
+      return '<button class="combo-item' + (n === cur ? ' on' : '') + '" type="button" data-cat="' + esc(n) + '">' +
+        '<span>' + esc(n) + '</span><i>' + (c.count[n] || 0) + '</i></button>';
+    }).join('');
+
+    if (!rows) rows = '<p class="combo-empty">还没有分类，直接输入新名字就行</p>';
+
+    $('#catPop').innerHTML = rows +
+      '<div class="combo-foot">输入框里打字就是新建分类</div>';
+  }
+
+  function openCatPop() {
+    paintCatPop();
+    $('#catPop').hidden = false;
+  }
+
+  function closeCatPop() {
+    var pop = $('#catPop');
+    if (pop) pop.hidden = true;
+  }
+
   function renderCats() {
     var c = categories();
     if (activeCat !== '全部' && c.list.indexOf(activeCat) === -1) activeCat = '全部';
@@ -1067,6 +1100,105 @@
     $('#settingsBtn').hidden = !perms.settings;
   }
 
+  /* ---------------- 本机快捷方式 ---------------- */
+  var editingShortcut = null;
+
+  function renderShortcuts() {
+    var sec = $('#scSec');
+    if (!sec) return;
+
+    // 网页版点不动本机程序，整块不显示
+    if (!DESKTOP || !authUser) { sec.hidden = true; return; }
+    sec.hidden = false;
+
+    var list = state.shortcuts || [];
+    $('#scEmpty').hidden = list.length > 0;
+
+    $('#scList').innerHTML = list.map(function (it) {
+      var ico = it.icon
+        ? '<img src="' + esc(it.icon) + '" alt="">'
+        : '<span class="sc-txt">' + esc((it.name || '?').slice(0, 1)) + '</span>';
+
+      return '<div class="sc-item" data-id="' + esc(it.id) + '" title="' + esc(it.path) + '">' +
+        '<button class="sc-main" type="button" data-act="run">' +
+          '<i class="sc-ico">' + ico + '</i>' +
+          '<span class="sc-name">' + esc(it.name) + '</span>' +
+        '</button>' +
+        '<button class="sc-more" type="button" data-act="rename" title="重命名">✎</button>' +
+        '<button class="sc-more" type="button" data-act="del" title="删除">✕</button>' +
+      '</div>';
+    }).join('');
+  }
+
+  function addShortcut() {
+    if (!window.desktopAPI || !window.desktopAPI.pickApp) return;
+
+    window.desktopAPI.pickApp().then(function (picked) {
+      if (!picked) return;
+
+      return api('POST', '/api/me/shortcuts', {
+        name: picked.name,
+        path: picked.path,
+        icon: picked.icon || ''
+      }).then(function (d) {
+        state.shortcuts = d.shortcuts || [];
+        renderShortcuts();
+        toast('已添加「' + picked.name + '」');
+      });
+    }).catch(function (e) {
+      toast(e.message || '添加失败');
+    });
+  }
+
+  function runShortcut(it) {
+    if (!window.desktopAPI || !window.desktopAPI.openPath) return;
+    window.desktopAPI.openPath(it.path).then(function (r) {
+      if (r && !r.ok) toast(r.error || '启动失败');
+    }).catch(function () { toast('启动失败'); });
+  }
+
+  function renameShortcut(it) {
+    editingShortcut = it;
+    $('#sc-name').value = it.name || '';
+    $('#scPath').textContent = it.path || '';
+    openModal($('#scModal'));
+    setTimeout(function () { $('#sc-name').focus(); $('#sc-name').select(); }, 80);
+  }
+
+  function saveShortcutName() {
+    if (!editingShortcut) return;
+
+    var name = ($('#sc-name').value || '').trim();
+    if (!name) { toast('名称不能为空'); return; }
+
+    api('PUT', '/api/me/shortcuts/' + encodeURIComponent(editingShortcut.id), { name: name })
+      .then(function (d) {
+        state.shortcuts = d.shortcuts || [];
+        closeModal($('#scModal'));
+        renderShortcuts();
+        toast('已重命名');
+      })
+      .catch(function (e) { toast(e.message); });
+  }
+
+  function removeShortcut(it) {
+    askConfirm({
+      title: '删除快捷方式？',
+      text: '「' + it.name + '」会从你的快捷方式里移除，本机程序本身不受影响。',
+      okText: '删除',
+      danger: true
+    }).then(function (yes) {
+      if (!yes) return;
+      api('DELETE', '/api/me/shortcuts/' + encodeURIComponent(it.id))
+        .then(function (d) {
+          state.shortcuts = d.shortcuts || [];
+          renderShortcuts();
+          toast('已删除');
+        })
+        .catch(function (e) { toast(e.message); });
+    });
+  }
+
   /* ---------------- 排序（拖动） ---------------- */
   var sorting = false;
 
@@ -1181,6 +1313,7 @@
     renderBrand();
     renderCats();
     renderGroups();
+    renderShortcuts();
     renderFoot();
     renderUser();
     paintNet();
@@ -1546,6 +1679,8 @@
     $('#loginRow').hidden = !admin;
     $('#usersBtn2').hidden = !admin;
     if (admin) $('#s-requireLogin').value = s.requireLogin === false ? '0' : '1';
+    $('#guestScope').hidden = !admin || s.requireLogin !== false;
+    if (admin) buildGuestBox();
 
     formBrand = /^#[0-9a-fA-F]{6}$/.test(s.brandColor || '') ? s.brandColor.toLowerCase() : BRAND_THEMES[0].color;
     buildBrandPicker();
@@ -1564,6 +1699,65 @@
     if (DESKTOP) loadServerInfo();
 
     openModal($('#setModal'));
+  }
+
+  /* ---------------- 游客可见范围 ---------------- */
+  function guestPicked() {
+    var st = state.settings || {};
+    var links = {},
+        cats = {};
+    (st.guestLinks || []).forEach(function (id) { links[id] = 1; });
+    (st.guestCats || []).forEach(function (c) { cats[c] = 1; });
+    return { links: links, cats: cats };
+  }
+
+  function buildGuestBox() {
+    var st = state.settings || {};
+    var picked = guestPicked();
+    var seeAll = st.guestSeeAll !== false;
+
+    document.querySelector('input[name="guestAll"][value="' + (seeAll ? '1' : '0') + '"]').checked = true;
+
+    var group = {};
+    state.links.forEach(function (l) {
+      var c = (l.cat || '未分类').trim();
+      (group[c] = group[c] || []).push(l);
+    });
+
+    $('#guestBox').innerHTML = categories().list.map(function (c) {
+      var on = !!picked.cats[c];
+      var items = (group[c] || []).map(function (l) {
+        return '<label class="vis-item"><input type="checkbox" data-guest-link="' + esc(l.id) + '"' +
+          (picked.links[l.id] || on ? ' checked' : '') + '><span>' + esc(l.name) + '</span></label>';
+      }).join('');
+
+      return '<div class="vis-cat">' +
+        '<label class="vis-cat-head"><input type="checkbox" data-guest-cat="' + esc(c) + '"' +
+          (on ? ' checked' : '') + '><span>' + esc(c) + '</span></label>' +
+        '<div class="vis-links">' + items + '</div>' +
+      '</div>';
+    }).join('');
+
+    $('#guestBox').hidden = seeAll;
+  }
+
+  function saveGuestScope() {
+    var seeAll = document.querySelector('input[name="guestAll"]:checked').value === '1';
+
+    var links = [],
+        cats = [];
+    Array.prototype.forEach.call($('#guestBox').querySelectorAll('input[data-guest-link]'), function (el) {
+      if (el.checked) links.push(el.getAttribute('data-guest-link'));
+    });
+    Array.prototype.forEach.call($('#guestBox').querySelectorAll('input[data-guest-cat]'), function (el) {
+      if (el.checked) cats.push(el.getAttribute('data-guest-cat'));
+    });
+
+    mutate('PUT', '/api/settings', {
+      guestSeeAll: seeAll,
+      guestLinks: seeAll ? [] : links,
+      guestCats: seeAll ? [] : cats
+    }, '游客可见范围已保存');
   }
 
   /* ---------------- 桌面端：连哪个服务端 ---------------- */
@@ -2250,6 +2444,8 @@
     applyType();
     paintThemeBtn(m, actual);
 
+    if (window.desktopAPI && window.desktopAPI.setTheme) window.desktopAPI.setTheme(actual);
+
     // 登录用户把偏好存到自己的账号上，换设备也跟着走
     if (!opts.local && authUser) {
       authUser.theme = m;
@@ -2356,6 +2552,30 @@
       e.preventDefault();
       var l = state.links.find(function (x) { return x.id === tile.dataset.id; });
       if (l) openLink(l);
+    });
+
+    /* 分类下拉 */
+    $('#catBtn').addEventListener('click', function (e) {
+      e.preventDefault();
+      if ($('#catPop').hidden) openCatPop(); else closeCatPop();
+    });
+
+    $('#f-cat').addEventListener('focus', openCatPop);
+
+    $('#f-cat').addEventListener('input', function () {
+      if (!$('#catPop').hidden) paintCatPop();
+    });
+
+    $('#catPop').addEventListener('click', function (e) {
+      var b = e.target.closest('.combo-item');
+      if (!b) return;
+      $('#f-cat').value = b.dataset.cat;
+      closeCatPop();
+      $('#f-cat').focus();
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.combo')) closeCatPop();
     });
 
     /* 新增 */
@@ -2560,6 +2780,51 @@
 
     /* 设置 */
     $('#settingsBtn').addEventListener('click', openSettings);
+
+    /* 本机快捷方式 */
+    if ($('#scAddBtn')) {
+      $('#scAddBtn').addEventListener('click', addShortcut);
+      $('#scSaveBtn').addEventListener('click', saveShortcutName);
+
+      $('#scList').addEventListener('click', function (e) {
+        var item = e.target.closest('.sc-item');
+        if (!item) return;
+
+        var it = (state.shortcuts || []).filter(function (x) { return x.id === item.dataset.id; })[0];
+        if (!it) return;
+
+        var act = e.target.closest('[data-act]');
+        var kind = act ? act.getAttribute('data-act') : 'run';
+
+        if (kind === 'run') runShortcut(it);
+        else if (kind === 'rename') renameShortcut(it);
+        else removeShortcut(it);
+      });
+    }
+
+    /* 游客可见范围 */
+    $('#s-requireLogin').addEventListener('change', function () {
+      $('#guestScope').hidden = this.value !== '0';
+    });
+
+    document.addEventListener('change', function (e) {
+      if (e.target.name === 'guestAll') {
+        $('#guestBox').hidden = e.target.value === '1';
+        saveGuestScope();
+        return;
+      }
+
+      if (e.target.matches('input[data-guest-cat]')) {
+        var box = e.target.closest('.vis-cat');
+        Array.prototype.forEach.call(box.querySelectorAll('input[data-guest-link]'), function (el) {
+          el.checked = e.target.checked;
+        });
+        saveGuestScope();
+        return;
+      }
+
+      if (e.target.matches('input[data-guest-link]')) saveGuestScope();
+    });
 
     $('#setNav').addEventListener('click', function (e) {
       var b = e.target.closest('[data-pane]');

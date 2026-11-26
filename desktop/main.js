@@ -671,6 +671,14 @@ ipcMain.handle('portal:setup-save', async (e, value) => {
   return { ok: true };
 });
 
+ipcMain.on('portal:theme', (e, theme) => {
+  tipTheme = theme === 'dark' ? 'dark' : 'light';
+  if (!dlWin || dlWin.isDestroyed()) return;
+
+  // 直接换配色，不重建窗口（重建会闪、还会丢进度）
+  dlExec('window.__dlTheme && window.__dlTheme(' + JSON.stringify(tipTheme) + ')');
+});
+
 ipcMain.on('portal:quit', () => app.quit());
 
 ipcMain.on('portal:relaunch', () => {
@@ -713,24 +721,27 @@ function escHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-function dlHtml() {
+let tipTheme = 'light';
+
+function dlHtml(theme) {
+  const dark = theme === 'dark';
   return `<!doctype html><meta charset="utf-8"><style>
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{margin:0;padding:12px 14px;overflow:hidden;background:#fff;
-      font:12.5px/1.5 "Segoe UI","Microsoft YaHei",system-ui;color:#1a2430}
+    body{margin:0;padding:12px 14px;overflow:hidden;background:${dark ? '#1b2027' : '#fff'};
+      font:12.5px/1.5 "Segoe UI","Microsoft YaHei",system-ui;color:${dark ? '#e6ebf1' : '#1a2430'}}
     #list{display:flex;flex-direction:column;gap:${DL_GAP}px;max-height:100%;overflow:auto}
     .row{flex:0 0 auto}
     .top{display:flex;align-items:baseline;gap:8px}
     .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .pct{flex-shrink:0;color:#7b8590;font-variant-numeric:tabular-nums}
-    .bar{height:4px;border-radius:99px;background:#eef2f5;overflow:hidden;margin:6px 0 5px}
+    .pct{flex-shrink:0;color:${dark ? '#98a3b0' : '#7b8590'};font-variant-numeric:tabular-nums}
+    .bar{height:4px;border-radius:99px;background:${dark ? '#2c333c' : '#eef2f5'};overflow:hidden;margin:6px 0 5px}
     .bar i{display:block;height:100%;width:0;border-radius:99px;background:#2fa795;transition:width .18s linear}
-    .ft{display:flex;align-items:center;gap:8px;color:#7b8590;font-size:11.5px;font-variant-numeric:tabular-nums}
+    .ft{display:flex;align-items:center;gap:8px;color:${dark ? '#98a3b0' : '#7b8590'};font-size:11.5px;font-variant-numeric:tabular-nums}
     .ft .txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .ft button{flex-shrink:0;padding:2px 9px;border:1px solid #e0e6ec;border-radius:5px;
-      background:#fff;color:#41505c;font:inherit;font-size:11px;cursor:pointer}
-    .ft button:hover{background:#f4f7f9}
+    .ft button{flex-shrink:0;padding:2px 9px;border:1px solid ${dark ? '#39414b' : '#e0e6ec'};border-radius:5px;
+      background:${dark ? '#242b34' : '#fff'};color:${dark ? '#c8d1dc' : '#41505c'};font:inherit;font-size:11px;cursor:pointer}
+    .ft button:hover{background:${dark ? '#2d3540' : '#f4f7f9'}}
     .row.ok .bar i{background:#17a34a}
     .row.err .bar i{background:#e0484d}
     .row.err .nm,.row.err .txt{color:#e0484d}
@@ -768,6 +779,13 @@ function dlHtml() {
       },
       remove: function (id) { var d = row(id); if (d) d.remove(); }
     };
+    window.__dlTheme = function (theme) {
+      var dark = theme === 'dark';
+      document.body.style.background = dark ? '#1b2027' : '#fff';
+      document.body.style.color = dark ? '#e6ebf1' : '#1a2430';
+      [].forEach.call(document.querySelectorAll('.bar'), function (b) { b.style.background = dark ? '#2c333c' : '#eef2f5'; });
+      [].forEach.call(document.querySelectorAll('.pct, .ft'), function (x) { x.style.color = dark ? '#98a3b0' : '#7b8590'; });
+    };
     document.getElementById('list').addEventListener('click', function (e) {
       var b = e.target.closest('[data-cancel]');
       if (b && window.dlTip) window.dlTip.cancel(b.getAttribute('data-cancel'));
@@ -784,12 +802,19 @@ function placeDlWindow(w) {
   if (!win || win.isDestroyed() || !w || w.isDestroyed()) return;
   try {
     const b = win.getBounds();
-    w.setBounds({
-      x: Math.round(b.x + b.width - DL_W - 28),
-      y: Math.round(b.y + b.height - dlHeight() - 64),
-      width: DL_W,
-      height: dlHeight()
-    });
+    const h = dlHeight();
+    const pad = 10;
+
+    // 只能在主窗口的框里活动：窗口贴边、或比浮窗还窄时也不能飘到外面
+    const minX = b.x + pad;
+    const minY = b.y + pad;
+    const maxX = b.x + b.width - DL_W - pad;
+    const maxY = b.y + b.height - h - pad;
+
+    const x = Math.max(minX, Math.min(maxX, Math.round(b.x + b.width - DL_W - 28)));
+    const y = Math.max(minY, Math.min(maxY, Math.round(b.y + b.height - h - 64)));
+
+    w.setBounds({ x, y, width: DL_W, height: h });
   } catch (e) {}
 }
 
@@ -824,7 +849,7 @@ function ensureDlWindow() {
 
   dlWin = self;
   placeDlWindow(self);
-  self.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(dlHtml()));
+  self.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(dlHtml(tipTheme)));
   self.once('ready-to-show', () => { if (!self.isDestroyed()) self.showInactive(); });
   self.on('closed', () => { if (dlWin === self) dlWin = null; });
   self.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -1013,6 +1038,70 @@ function msgBoxSync(opts) {
 }
 
 ipcMain.handle('portal:check-update', () => checkUpdate(true));
+
+/* 标记为「不支持内嵌」的服务：开独立窗口，不再塞进 webview */
+ipcMain.handle('portal:open-window', (e, url, title) => {
+  const u = String(url || '');
+  if (!/^https?:\/\//i.test(u)) return { ok: false, error: '地址不正确' };
+
+  try {
+    const w = new BrowserWindow({
+      width: 1240,
+      height: 840,
+      title: String(title || '') || '企业服务大厅',
+      icon: iconPath(),
+      autoHideMenuBar: true,
+      backgroundColor: '#0e141a',
+      webPreferences: { contextIsolation: true, nodeIntegration: false, spellcheck: false }
+    });
+
+    w.webContents.setWindowOpenHandler(({ url: target }) => {
+      if (/^https?:/i.test(target)) shell.openExternal(target);
+      return { action: 'deny' };
+    });
+
+    w.loadURL(u);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+/* 选本机程序，顺便把图标取出来 */
+ipcMain.handle('portal:pick-app', async () => {
+  const parent = (win && !win.isDestroyed()) ? win : undefined;
+  const opts = {
+    title: '选择要添加的程序',
+    properties: ['openFile'],
+    filters: [
+      { name: '程序', extensions: ['exe', 'lnk', 'bat', 'cmd', 'url'] },
+      { name: '所有文件', extensions: ['*'] }
+    ]
+  };
+
+  const r = parent ? await dialog.showOpenDialog(parent, opts) : await dialog.showOpenDialog(opts);
+  if (r.canceled || !r.filePaths || !r.filePaths[0]) return null;
+
+  const file = r.filePaths[0];
+  let icon = '';
+  try {
+    const img = await app.getFileIcon(file, { size: 'large' });
+    icon = img.isEmpty() ? '' : img.toDataURL();
+  } catch (err) {}
+
+  return { path: file, name: path.basename(file).replace(/\.[^.]+$/, ''), icon: icon };
+});
+
+ipcMain.handle('portal:open-path', async (e, target) => {
+  const target_ = String(target || '');
+  if (!target_) return { ok: false, error: '路径为空' };
+  try {
+    const err = await shell.openPath(target_);
+    return err ? { ok: false, error: err } : { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 
 /* ---------------- 更新 ---------------- */
 
