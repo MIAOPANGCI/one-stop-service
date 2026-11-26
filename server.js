@@ -2409,31 +2409,39 @@ const server = http.createServer(function (req, res) {
       if (!items.length) return deny(400, '没有要添加的内容');
 
       const seen = {};
-      db.links.forEach(function (l) { seen[String(l.urlWan || l.urlLan || '').toLowerCase()] = 1; });
+      db.links.forEach(function (l) {
+        [l.urlLan, l.urlWan].forEach(function (u) { if (u) seen[String(u).toLowerCase()] = 1; });
+      });
 
       let added = 0;
       let skipped = 0;
 
       items.forEach(function (raw) {
         const name = cleanText(raw.name, 40);
-        const url = String(raw.url || '').trim().slice(0, 300);
+        const lan = String(raw.urlLan || '').trim().slice(0, 300);
+        const wan = String(raw.urlWan || '').trim().slice(0, 300);
         const cat = cleanText(raw.cat, 12) || '未分类';
-        if (!name || !url) { skipped++; return; }
+        const desc = cleanText(raw.desc, 80);
+        const icon = cleanText(raw.icon, 4);
+        const color = /^#[0-9a-fA-F]{6}$/.test(String(raw.color || '')) ? String(raw.color) : '';
 
-        const key = url.toLowerCase();
+        if (!name || (!lan && !wan)) { skipped++; return; }
+
+        const key = String(lan || wan).toLowerCase();
         if (seen[key]) { skipped++; return; }
         seen[key] = 1;
+        if (wan) seen[wan.toLowerCase()] = 1;
 
         db.links.push({
           id: uid('l'),
           name: name,
-          desc: '',
+          desc: desc,
           cat: cat,
-          urlLan: '',
-          urlWan: url,
-          icon: (name || '?').slice(0, 1),
-          color: BULK_COLORS[db.links.length % BULK_COLORS.length],
-          noFrame: false,
+          urlLan: lan,
+          urlWan: wan,
+          icon: icon || (name || '?').slice(0, 1),
+          color: color || BULK_COLORS[db.links.length % BULK_COLORS.length],
+          noFrame: !!raw.noFrame,
           createdAt: nowIso()
         });
         added++;

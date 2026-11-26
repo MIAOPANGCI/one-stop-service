@@ -1,6 +1,6 @@
 {
   "name": "portal-desktop",
-  "version": "1.6.6",
+  "version": "1.6.7",
   "private": true,
   "description": "企业服务大厅 · 桌面客户端",
   "main": "main.js",

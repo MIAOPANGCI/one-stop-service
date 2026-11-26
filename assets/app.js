@@ -972,8 +972,12 @@
     var empty = $('#empty');
 
     if (!list.length) {
-      box.innerHTML = '';
-      empty.hidden = false;
+      // 服务为空也要把快捷方式画出来，否则添加了程序却看不到
+      var scOnly = shortcutsHtml();
+      box.innerHTML = scOnly;
+
+      empty.hidden = !!scOnly;
+
       $('#emptyAddBtn').hidden = !canManageLinks();
       if (!state.links.length) {
         $('#emptyTitle').textContent = online ? '这里还没有服务' : '读不到数据';
@@ -984,6 +988,8 @@
         $('#emptyTitle').textContent = '没有找到匹配的服务';
         $('#emptyHint').textContent = '换个关键词，或切回「全部」看看。';
       }
+
+      setTimeout(refreshWeakIcons, 0);
       return;
     }
     empty.hidden = true;
@@ -1145,7 +1151,7 @@
       '</div>' +
       (list.length
         ? '<div class="sc-list" id="scList">' + items + '</div>'
-        : '<p class="sc-empty">还没有快捷方式。点右上角「修改」，再点「添加程序」选一个 exe。</p>') +
+        : '<p class="sc-empty">还没有快捷方式。点右上角「编辑」，再点「添加程序」选一个 exe。</p>') +
     '</section>';
   }
 
@@ -1181,48 +1187,119 @@
   }
 
   /* ---------------- 批量添加服务 ---------------- */
+  var bulkColor = '';
+
+  // 表头关键词 → 字段名
+  var BULK_COLS = [
+    { key: 'name', re: /^(名称|名字|服务名|system|name)$/i },
+    { key: 'urlLan', re: /^(内网|内网地址|内网url|lan)$/i },
+    { key: 'urlWan', re: /^(外网|外网地址|外网url|地址|网址|url|wan)$/i },
+    { key: 'cat', re: /^(分类|类别|category|cat)$/i },
+    { key: 'desc', re: /^(描述|说明|备注|desc|remark)$/i },
+    { key: 'icon', re: /^(图标|icon)$/i },
+    { key: 'color', re: /^(底色|颜色|color)$/i }
+  ];
+
+  function splitRow(line) {
+    if (line.indexOf('\t') > -1) return line.split('\t').map(function (x) { return x.trim(); });
+    return line.split(/[,，]/).map(function (x) { return x.trim(); });
+  }
+
+  function normalizeUrl(u) {
+    u = String(u || '').trim();
+    if (!u) return '';
+    return /^https?:\/\//i.test(u) ? u : 'http://' + u;
+  }
+
+  /* 支持表头、也支持纯数据；纯数据按 名称/内网/外网/分类/描述/图标/底色 的顺序 */
   function parseBulk(text) {
-    var out = [];
+    var lines = String(text || '').split(/\r?\n/).filter(function (x) { return x.trim(); });
+    if (!lines.length) return [];
 
-    String(text || '').split(/\r?\n/).forEach(function (line) {
-      line = line.trim();
-      if (!line || line.charAt(0) === '#') return;
-
-      var parts = line.split(/[,，\t]|\s{2,}/).map(function (x) { return x.trim(); }).filter(Boolean);
-      if (parts.length === 1) parts = line.split(/\s+/);
-
-      var name = parts[0] || '';
-      var url = parts[1] || '';
-      var cat = parts[2] || '';
-
-      if (!name) return;
-      if (url && !/^https?:\/\//i.test(url)) url = 'http://' + url;
-
-      out.push({ name: name, url: url, cat: cat });
+    var order = ['name', 'urlLan', 'urlWan', 'cat', 'desc', 'icon', 'color'];
+    var first = splitRow(lines[0]);
+    var mapped = first.map(function (cell) {
+      var hit = BULK_COLS.filter(function (c) { return c.re.test(cell); })[0];
+      return hit ? hit.key : '';
     });
 
-    return out;
+    var hasHeader = mapped.filter(Boolean).length >= 2;
+    if (hasHeader) order = mapped;
+
+    var rows = hasHeader ? lines.slice(1) : lines;
+
+    return rows.map(function (line) {
+      var cells = splitRow(line);
+      var item = {};
+
+      order.forEach(function (key, i) {
+        if (!key) return;
+        item[key] = (cells[i] || '').trim();
+      });
+
+      item.urlLan = normalizeUrl(item.urlLan);
+      item.urlWan = normalizeUrl(item.urlWan);
+      item.cat = item.cat || '';
+      item.desc = item.desc || '';
+      item.icon = item.icon || '';
+      item.color = /^#[0-9a-fA-F]{6}$/.test(item.color || '') ? item.color : '';
+
+      return item;
+    }).filter(function (x) { return x.name && (x.urlLan || x.urlWan); });
+  }
+
+  function buildBulkColors() {
+    var cols = [''].concat(PALETTE.slice(0, 10));
+
+    $('#bulkColors').innerHTML = cols.map(function (c) {
+      var on = (c === bulkColor) ? ' on' : '';
+      var label = c ? '' : '自动';
+      return '<button class="pick color' + on + '" type="button" data-bulkcolor="' + c + '"' +
+        ' style="color:' + (c || '#cbd5e1') + '"><i style="background:' + (c || '#e2e8f0') + '"></i>' +
+        (label ? '<em style="font-size:10px">' + label + '</em>' : '') + '</button>';
+    }).join('');
   }
 
   function openBulk() {
     $('#bulkText').value = '';
     $('#bulkInfo').textContent = '';
+    $('#bulkCat').value = '';
+    $('#bulkIcon').value = '';
+    bulkColor = '';
+    buildBulkColors();
     closeModal($('#linkModal'));
     openModal($('#bulkModal'));
     setTimeout(function () { $('#bulkText').focus(); }, 80);
   }
 
+  function bulkItems() {
+    var cat = ($('#bulkCat').value || '').trim();
+    var icon = ($('#bulkIcon').value || '').trim();
+
+    return parseBulk($('#bulkText').value).map(function (x) {
+      return {
+        name: x.name,
+        urlLan: x.urlLan,
+        urlWan: x.urlWan,
+        cat: x.cat || cat,
+        desc: x.desc,
+        icon: x.icon || icon,
+        color: x.color || bulkColor
+      };
+    });
+  }
+
   function saveBulk() {
-    var items = parseBulk($('#bulkText').value).filter(function (x) { return x.url; });
+    var items = bulkItems();
 
     if (!items.length) {
-      toast('至少要有一行「名称, 地址」');
+      toast('至少要有一行「名称 + 地址」');
       return;
     }
 
     api('POST', '/api/links/bulk', { items: items }).then(function (d) {
       closeModal($('#bulkModal'));
-      toast('已添加 ' + d.added + ' 个服务' + (d.skipped ? '，跳过 ' + d.skipped + ' 行' : ''));
+      toast('已添加 ' + d.added + ' 个服务' + (d.skipped ? '，跳过 ' + d.skipped + ' 行（重复或没地址）' : ''));
       loadState();
     }).catch(function (e) {
       toast(e.message || '添加失败');
@@ -1332,7 +1409,7 @@
     document.body.classList.toggle('managing', on);
 
     var btn = $('#editBtn');
-    btn.textContent = on ? '完成' : '修改';
+    btn.textContent = on ? '完成' : '编辑';
     btn.classList.toggle('on', on);
 
     $('#pickBar').hidden = !on;
@@ -1523,8 +1600,19 @@
   }
 
   /* ---------------- 弹窗 ---------------- */
-  function openModal(el) { el.hidden = false; document.body.style.overflow = 'hidden'; }
-  function closeModal(el) { el.hidden = true; document.body.style.overflow = ''; }
+  function openModal(el) {
+    el.hidden = false;
+    document.body.style.overflow = 'hidden';
+    document.body.classList.add('modal-open');
+  }
+  function closeModal(el) {
+    el.hidden = true;
+    document.body.style.overflow = '';
+
+    // 还有别的弹窗开着就别急着恢复滚动
+    var anyOpen = [].some.call(document.querySelectorAll('.modal'), function (m) { return !m.hidden; });
+    if (!anyOpen) document.body.classList.remove('modal-open');
+  }
   function closeAll() {
     closeModal($('#linkModal'));
     closeModal($('#setModal'));
@@ -3120,9 +3208,19 @@
     $('#bulkOpenBtn').addEventListener('click', openBulk);
     $('#bulkSaveBtn').addEventListener('click', saveBulk);
 
-    $('#bulkText').addEventListener('input', function () {
-      var n = parseBulk(this.value).filter(function (x) { return x.url; }).length;
+    var bulkPreview = function () {
+      var n = bulkItems().length;
       $('#bulkInfo').textContent = n ? '将添加 ' + n + ' 个服务' : '';
+    };
+
+    $('#bulkText').addEventListener('input', bulkPreview);
+    $('#bulkCat').addEventListener('input', bulkPreview);
+
+    $('#bulkColors').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-bulkcolor]');
+      if (!b) return;
+      bulkColor = b.getAttribute('data-bulkcolor');
+      buildBulkColors();
     });
 
     $('#colorPick').addEventListener('input', function (e) {
@@ -3133,10 +3231,17 @@
     $('#pickDelBtn').addEventListener('click', deletePicked);
 
     $('#pickAllBtn').addEventListener('click', function () {
-      var all = filtered();
-      var every = all.every(function (l) { return pickedLinks[l.id]; });
+      // 全选 / 全不选：服务和程序一起
+      var all = canManageLinks() ? filtered() : [];
+      var scs = DESKTOP && authUser ? (state.shortcuts || []) : [];
+
+      var everySvc = all.length > 0 && all.every(function (l) { return pickedLinks[l.id]; });
+      var everySc = scs.length > 0 && scs.every(function (it) { return pickedSc[it.id]; });
+      var every = (all.length + scs.length) > 0 && everySvc && everySc;
 
       all.forEach(function (l) { pickedLinks[l.id] = !every; });
+      scs.forEach(function (it) { pickedSc[it.id] = !every; });
+
       render();
       syncPickBar();
     });
