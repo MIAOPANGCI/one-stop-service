@@ -46,11 +46,8 @@
     <button class="net-pill" id="netPill" type="button">
       <span class="dot"></span><span class="txt">检测中</span>
     </button>
-    <button class="nav-btn nav-btn-ghost" id="sortBtn" type="button" hidden>
-      <span class="nav-btn-txt">排序</span>
-    </button>
-    <button class="nav-btn nav-btn-ghost" id="manageBtn" type="button" hidden>
-      <span class="nav-btn-txt">批量删除</span>
+    <button class="nav-btn nav-btn-ghost" id="editBtn" type="button" hidden>
+      <span class="nav-btn-txt">修改</span>
     </button>
     <button class="nav-btn" id="addBtn" type="button">
       <span class="plus">＋</span><span class="nav-btn-txt">添加服务</span>
@@ -676,7 +673,7 @@
   <span class="pick-bar-n" id="pickCount">已选 0 个服务</span>
   <button class="btn-text" id="pickAllBtn" type="button">全选本页</button>
   <span class="pick-bar-gap"></span>
-  <button class="btn-text" id="pickCancelBtn" type="button">取消</button>
+  <button class="btn-text" id="pickCancelBtn" type="button">退出修改</button>
   <button class="btn-primary is-danger" id="pickDelBtn" type="button">删除选中</button>
 </div>
 
@@ -684,7 +681,7 @@
   <div class="modal-mask" data-close></div>
   <div class="modal-card" role="dialog" aria-modal="true" style="max-width:400px">
     <div class="modal-head">
-      <h3>重命名快捷方式</h3>
+      <h3>修改快捷方式</h3>
       <button class="x" type="button" data-close>✕</button>
     </div>
     <div class="modal-body">
@@ -695,6 +692,7 @@
       <p class="hint" id="scPath"></p>
     </div>
     <div class="modal-foot">
+      <button class="btn-text danger" id="scDelBtn" type="button">删除快捷方式</button>
       <div class="spacer"></div>
       <button class="btn-text" type="button" data-close>取消</button>
       <button class="btn-primary" id="scSaveBtn" type="button">保存</button>

@@ -1106,8 +1106,7 @@
     $('#usersItem').hidden = !perms.users;
 
     $('#addBtn').hidden = !canManageLinks();
-    $('#sortBtn').hidden = !canManageLinks();
-    $('#manageBtn').hidden = !canManageLinks();
+    $('#editBtn').hidden = !canManageLinks();
     $('#settingsBtn').hidden = !perms.settings;
   }
 
@@ -1130,8 +1129,7 @@
           '<i class="sc-ico">' + ico + '</i>' +
           '<span class="sc-name">' + esc(it.name) + '</span>' +
         '</button>' +
-        (sorting ? '' : '<button class="sc-more" type="button" data-act="rename" title="重命名">✎</button>' +
-        '<button class="sc-more" type="button" data-act="del" title="删除">✕</button>') +
+        '<button class="sc-more" type="button" data-act="rename" title="重命名或删除">✎</button>' +
       '</div>';
     }).join('');
 
@@ -1249,13 +1247,22 @@
   /* ---------------- 排序（拖动） ---------------- */
   var sorting = false;
 
-  function setSorting(on) {
+  function setEditing(on) {
+    // 排序和批量删除合成一个「修改」模式：能拖、能勾、能删
     sorting = on;
+    managing = on;
+
+    if (!on) pickedLinks = {};
+
     document.body.classList.toggle('sorting', on);
-    var btn = $('#sortBtn');
-    btn.textContent = on ? '完成排序' : '排序';
+    document.body.classList.toggle('managing', on);
+
+    var btn = $('#editBtn');
+    btn.textContent = on ? '完成' : '修改';
     btn.classList.toggle('on', on);
-    $('#sortTip').hidden = !on;
+
+    $('#pickBar').hidden = !on;
+    syncPickBar();
     render();
   }
 
@@ -1263,19 +1270,7 @@
   var managing = false;
   var pickedLinks = {};
 
-  function setManaging(on) {
-    managing = on;
-    if (!on) pickedLinks = {};
-    else setSorting(false);
 
-    document.body.classList.toggle('managing', on);
-    var btn = $('#manageBtn');
-    btn.textContent = on ? '退出批量' : '批量删除';
-    btn.classList.toggle('on', on);
-    $('#pickBar').hidden = !on;
-    syncPickBar();
-    render();
-  }
 
   function pickedIds() {
     return Object.keys(pickedLinks).filter(function (id) { return pickedLinks[id]; });
@@ -1308,7 +1303,7 @@
       mutate('POST', '/api/links/delete', { ids: ids }, '已删除 ' + ids.length + ' 个服务').then(function (ok) {
         if (!ok) return;
         pickedLinks = {};
-        setManaging(false);
+        setEditing(false);
       });
     });
   }
@@ -2877,6 +2872,15 @@
     /* 本机快捷方式 */
     if ($('#scSaveBtn')) $('#scSaveBtn').addEventListener('click', saveShortcutName);
 
+    if ($('#scDelBtn')) {
+      $('#scDelBtn').addEventListener('click', function () {
+        if (!editingShortcut) return;
+        var it = editingShortcut;
+        closeModal($('#scModal'));
+        removeShortcut(it);
+      });
+    }
+
     $('#settingsBtn').addEventListener('click', openSettings);
 
     /* 本机快捷方式 */
@@ -2977,11 +2981,11 @@
     var dragScId = '';
     var dragScBlock = false;
 
-    $('#sortBtn').addEventListener('click', function () { setSorting(!sorting); });
+    $('#editBtn').addEventListener('click', function () { setEditing(!sorting); });
 
     /* ---- 批量删除 ---- */
-    $('#manageBtn').addEventListener('click', function () { setManaging(!managing); });
-    $('#pickCancelBtn').addEventListener('click', function () { setManaging(false); });
+
+    $('#pickCancelBtn').addEventListener('click', function () { setEditing(false); });
     $('#pickDelBtn').addEventListener('click', deletePicked);
 
     $('#pickAllBtn').addEventListener('click', function () {

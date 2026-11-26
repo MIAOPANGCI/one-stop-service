@@ -1174,6 +1174,9 @@ body::-webkit-scrollbar {
   transition: opacity .15s, background .15s;
 }
 
+/* 修改模式下卡片是拿来拖的，✎ 先藏起来，改名/删除在普通模式里点 ✎ */
+body.sorting .sc-more { display: none; }
+
 body.sorting .sc-item { cursor: grab; }
 body.sorting .sc-item.dragging { opacity: .35; }
 body.sorting .sc-head { cursor: grab; }
