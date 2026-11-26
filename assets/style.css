@@ -941,6 +941,44 @@ html[data-glow="off"] .hero-bg::after { display: none; }
 }
 .field textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
 
+/* ==================== 滚动条 ==================== */
+/* 页面右侧那根带箭头的滚动条太抢眼，隐掉；滚轮、触控板、键盘都照常 */
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* 弹窗内部这类小区域保留一条细滚动条，否则看不出来还能滚 */
+.modal-body::-webkit-scrollbar,
+.vis-box::-webkit-scrollbar,
+.set-nav::-webkit-scrollbar,
+.combo-pop::-webkit-scrollbar,
+.tab-frames::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.modal-body::-webkit-scrollbar-thumb,
+.vis-box::-webkit-scrollbar-thumb,
+.set-nav::-webkit-scrollbar-thumb,
+.combo-pop::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--ink-3) 45%, transparent);
+}
+
+.modal-body::-webkit-scrollbar-track,
+.vis-box::-webkit-scrollbar-track,
+.set-nav::-webkit-scrollbar-track,
+.combo-pop::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 /* ==================== 分类下拉（自绘） ==================== */
 .combo { position: relative; }
 
@@ -1115,6 +1153,15 @@ html[data-glow="off"] .hero-bg::after { display: none; }
   cursor: pointer;
   opacity: 0;
   transition: opacity .15s, background .15s;
+}
+
+body.sorting .sc-item { cursor: grab; }
+body.sorting .sc-item.dragging { opacity: .35; }
+body.sorting .sc-head { cursor: grab; }
+body.sorting .sc-head h3::after {
+  content: " ⠿";
+  color: var(--ink-3);
+  font-size: 12px;
 }
 
 .sc-item:hover .sc-more { opacity: 1; }

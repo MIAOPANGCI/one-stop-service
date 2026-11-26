@@ -425,6 +425,7 @@ const DEFAULT_SETTINGS = {
   heroGlow: true,           // 首屏壁纸上的光晕
   glowColor: '',            // 空 = 默认青绿
   catOrder: [],             // 分类的显示顺序（名字数组，没列到的按出现顺序排在后面）
+  scIndex: 0,               // 快捷方式块插在第几个分类之前（0=最前）
   guestSeeAll: true,        // 游客（未登录）能看到全部服务吗
   guestLinks: [],           // 游客能看的具体服务
   guestCats: [],            // 游客能看的分类
@@ -1876,6 +1877,10 @@ const server = http.createServer(function (req, res) {
       if ('netMode' in body) s.netMode = ['auto', 'lan', 'wan'].indexOf(body.netMode) > -1 ? body.netMode : 'auto';
       if ('openInNewTab' in body) s.openInNewTab = Boolean(body.openInNewTab);
       if ('heroGlow' in body) s.heroGlow = Boolean(body.heroGlow);
+      if ('scIndex' in body) {
+        const n = Number(body.scIndex);
+        s.scIndex = isFinite(n) ? Math.max(0, Math.min(99, Math.round(n))) : 0;
+      }
       if ('guestSeeAll' in body) s.guestSeeAll = body.guestSeeAll !== false;
       if (Array.isArray(body.guestLinks)) s.guestLinks = body.guestLinks.map(String).slice(0, 500);
       if (Array.isArray(body.guestCats)) {
@@ -2418,6 +2423,28 @@ const server = http.createServer(function (req, res) {
     return;
   }
 
+  if (pathname === '/api/me/shortcuts/order' && method === 'POST') {
+    if (!user) return deny(401, '请先登录');
+
+    readJson(req).then(function (body) {
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      if (!ids.length) return deny(400, '顺序为空');
+
+      const cur = Array.isArray(user.shortcuts) ? user.shortcuts : [];
+      const map = {};
+      cur.forEach(function (x) { map[x.id] = x; });
+
+      const next = [];
+      ids.forEach(function (id) { if (map[id]) { next.push(map[id]); delete map[id]; } });
+      cur.forEach(function (x) { if (map[x.id]) next.push(x); });
+
+      user.shortcuts = next;
+      persist();
+      sendJson(res, 200, { ok: true, shortcuts: user.shortcuts });
+    }).catch(function (e) { deny(400, e.message); });
+    return;
+  }
+
   const scm = pathname.match(/^\/api\/me\/shortcuts\/([A-Za-z0-9_-]+)$/);
   if (scm) {
     if (!user) return deny(401, '请先登录');
@@ -2434,6 +2461,10 @@ const server = http.createServer(function (req, res) {
           if (name) it.name = name;
         }
         if ('path' in body && String(body.path || '').trim()) it.path = String(body.path).slice(0, 500);
+        if ('icon' in body) {
+          const icon = String(body.icon || '').slice(0, 60000);
+          it.icon = /^data:image\//i.test(icon) ? icon : '';
+        }
         persist();
         sendJson(res, 200, { ok: true, shortcuts: user.shortcuts });
       }).catch(function (e) { deny(400, e.message); });

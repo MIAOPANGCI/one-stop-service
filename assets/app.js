@@ -683,7 +683,7 @@
 
     order = sortCatNames(order);
 
-    box.innerHTML = order.map(function (cat) {
+    var parts = order.map(function (cat) {
       var items = groups[cat].map(function (l) {
         var url = pickUrl(l).url;
         var raw = (l.icon || '').trim();
@@ -991,14 +991,25 @@
 
     order = sortCatNames(order);
 
-    box.innerHTML = order.map(function (cat) {
+    var parts = order.map(function (cat) {
       var arr = map[cat];
       return '<section class="group">' +
         '<div class="group-head" data-cat="' + esc(cat) + '"' + (sorting ? ' draggable="true"' : '') + '>' +
           '<h3>' + esc(cat) + '</h3><span class="group-n">' + arr.length + ' 项</span></div>' +
         '<div class="tiles">' + arr.map(tileHtml).join('') + '</div>' +
       '</section>';
-    }).join('');
+    });
+
+    // 快捷方式整块可以插到分类之间（settings.scIndex = 插在第几个分类之前）
+    var sc = shortcutsHtml();
+    if (sc) {
+      var at = Math.max(0, Math.min(parts.length, Number(state.settings.scIndex) || 0));
+      parts.splice(at, 0, sc);
+    }
+
+    box.innerHTML = parts.join('');
+
+    setTimeout(refreshWeakIcons, 0);
   }
 
   function renderFoot() {
@@ -1103,31 +1114,67 @@
   /* ---------------- 本机快捷方式 ---------------- */
   var editingShortcut = null;
 
-  function renderShortcuts() {
-    var sec = $('#scSec');
-    if (!sec) return;
-
-    // 网页版点不动本机程序，整块不显示
-    if (!DESKTOP || !authUser) { sec.hidden = true; return; }
-    sec.hidden = false;
+  function shortcutsHtml() {
+    if (!DESKTOP || !authUser) return '';
 
     var list = state.shortcuts || [];
-    $('#scEmpty').hidden = list.length > 0;
 
-    $('#scList').innerHTML = list.map(function (it) {
+    var items = list.map(function (it) {
       var ico = it.icon
         ? '<img src="' + esc(it.icon) + '" alt="">'
         : '<span class="sc-txt">' + esc((it.name || '?').slice(0, 1)) + '</span>';
 
-      return '<div class="sc-item" data-id="' + esc(it.id) + '" title="' + esc(it.path) + '">' +
+      return '<div class="sc-item"' + (sorting ? ' draggable="true"' : '') + ' data-id="' + esc(it.id) +
+        '" data-sc="1" title="' + esc(it.path) + '">' +
         '<button class="sc-main" type="button" data-act="run">' +
           '<i class="sc-ico">' + ico + '</i>' +
           '<span class="sc-name">' + esc(it.name) + '</span>' +
         '</button>' +
-        '<button class="sc-more" type="button" data-act="rename" title="重命名">✎</button>' +
-        '<button class="sc-more" type="button" data-act="del" title="删除">✕</button>' +
+        (sorting ? '' : '<button class="sc-more" type="button" data-act="rename" title="重命名">✎</button>' +
+        '<button class="sc-more" type="button" data-act="del" title="删除">✕</button>') +
       '</div>';
     }).join('');
+
+    return '<section class="sc-sec" id="scSec">' +
+      '<div class="sc-head" data-sc-head="1"' + (sorting ? ' draggable="true"' : '') + '>' +
+        '<h3>快捷方式 <span class="sc-sub">本机程序</span></h3>' +
+        '<button class="btn-line sm" id="scAddBtn" type="button">＋ 添加程序</button>' +
+      '</div>' +
+      (list.length
+        ? '<div class="sc-list" id="scList">' + items + '</div>'
+        : '<p class="sc-empty">还没有快捷方式。点「添加程序」选一个 exe，就能从这里直接启动。</p>') +
+    '</section>';
+  }
+
+  /* 老数据里的图标是「白纸」，按路径重取一次，取到就回写 */
+  var iconFixed = false;
+
+  function refreshWeakIcons() {
+    if (iconFixed || !DESKTOP || !window.desktopAPI || !window.desktopAPI.iconsFor) return;
+
+    var weak = (state.shortcuts || []).filter(function (x) {
+      return !x.icon || String(x.icon).length < 900;
+    });
+    if (!weak.length) return;
+
+    iconFixed = true;
+
+    window.desktopAPI.iconsFor(weak.map(function (x) { return { path: x.path }; })).then(function (icons) {
+      if (!Array.isArray(icons)) return;
+
+      var jobs = [];
+      weak.forEach(function (it, i) {
+        var data = icons[i];
+        if (!data || String(data).length < 900) return;
+
+        it.icon = data;
+        jobs.push(api('PUT', '/api/me/shortcuts/' + encodeURIComponent(it.id), { icon: data }).catch(function () {}));
+      });
+
+      if (jobs.length) {
+        Promise.all(jobs).then(function () { render(); });
+      }
+    }).catch(function () {});
   }
 
   function addShortcut() {
@@ -1142,7 +1189,7 @@
         icon: picked.icon || ''
       }).then(function (d) {
         state.shortcuts = d.shortcuts || [];
-        renderShortcuts();
+        render();
         toast('已添加「' + picked.name + '」');
       });
     }).catch(function (e) {
@@ -1175,7 +1222,7 @@
       .then(function (d) {
         state.shortcuts = d.shortcuts || [];
         closeModal($('#scModal'));
-        renderShortcuts();
+        render();
         toast('已重命名');
       })
       .catch(function (e) { toast(e.message); });
@@ -1192,7 +1239,7 @@
       api('DELETE', '/api/me/shortcuts/' + encodeURIComponent(it.id))
         .then(function (d) {
           state.shortcuts = d.shortcuts || [];
-          renderShortcuts();
+          render();
           toast('已删除');
         })
         .catch(function (e) { toast(e.message); });
@@ -1293,6 +1340,34 @@
     });
   }
 
+  function moveScItem(fromId, toId) {
+    if (!fromId || !toId || fromId === toId) return;
+
+    var ids = (state.shortcuts || []).map(function (x) { return x.id; });
+    var from = ids.indexOf(fromId);
+    var to = ids.indexOf(toId);
+    if (from < 0 || to < 0) return;
+
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+
+    api('POST', '/api/me/shortcuts/order', { ids: ids }).then(function (d) {
+      state.shortcuts = d.shortcuts || state.shortcuts;
+      render();
+      toast('快捷方式顺序已保存');
+    }).catch(function (e) { toast(e.message); });
+  }
+
+  /* 把整块快捷方式挪到第几个分类之前 */
+  function moveScBlock(toIdx) {
+    var cur = Number(state.settings.scIndex) || 0;
+    var next = cur <= toIdx ? toIdx + 1 : toIdx;
+    if (next === cur) return;
+
+    mutate('PUT', '/api/settings', { scIndex: next }, '快捷方式位置已保存').then(function (ok) {
+      if (ok) render();
+    });
+  }
+
   function moveCatTo(fromCat, toCat) {
     if (!fromCat || !toCat || fromCat === toCat) return;
 
@@ -1313,7 +1388,6 @@
     renderBrand();
     renderCats();
     renderGroups();
-    renderShortcuts();
     renderFoot();
     renderUser();
     paintNet();
@@ -2524,6 +2598,25 @@
     var groups = $('#groups');
 
     groups.addEventListener('click', function (e) {
+      /* 本机快捷方式 */
+      if (e.target.closest('#scAddBtn')) { addShortcut(); return; }
+
+      var scItem = e.target.closest('.sc-item');
+      if (scItem) {
+        if (sorting) return;
+
+        var it = (state.shortcuts || []).filter(function (x) { return x.id === scItem.dataset.id; })[0];
+        if (!it) return;
+
+        var scAct = e.target.closest('[data-act]');
+        var kind = scAct ? scAct.getAttribute('data-act') : 'run';
+
+        if (kind === 'run') runShortcut(it);
+        else if (kind === 'rename') renameShortcut(it);
+        else removeShortcut(it);
+        return;
+      }
+
       var tile = e.target.closest('.tile');
       if (!tile) return;
       var id = tile.dataset.id;
@@ -2782,6 +2875,11 @@
     $('#settingsBtn').addEventListener('click', openSettings);
 
     /* 本机快捷方式 */
+    if ($('#scSaveBtn')) $('#scSaveBtn').addEventListener('click', saveShortcutName);
+
+    $('#settingsBtn').addEventListener('click', openSettings);
+
+    /* 本机快捷方式 */
     if ($('#scAddBtn')) {
       $('#scAddBtn').addEventListener('click', addShortcut);
       $('#scSaveBtn').addEventListener('click', saveShortcutName);
@@ -2876,6 +2974,8 @@
     /* ---- 拖动排序 ---- */
     var dragId = '';
     var dragCat = '';
+    var dragScId = '';
+    var dragScBlock = false;
 
     $('#sortBtn').addEventListener('click', function () { setSorting(!sorting); });
 
@@ -2896,6 +2996,20 @@
     $('#groups').addEventListener('dragstart', function (e) {
       if (!sorting) return;
 
+      if (e.target.closest('.sc-head')) {
+        dragScBlock = true;
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        return;
+      }
+
+      var scItem = e.target.closest('.sc-item');
+      if (scItem) {
+        dragScId = scItem.dataset.id;
+        scItem.classList.add('dragging');
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        return;
+      }
+
       var head = e.target.closest('.group-head');
       if (head) {
         dragCat = head.dataset.cat || '';
@@ -2914,19 +3028,45 @@
     $('#groups').addEventListener('dragend', function (e) {
       var t = e.target.closest('.tile');
       if (t) t.classList.remove('dragging');
+
+      var sc = e.target.closest('.sc-item');
+      if (sc) sc.classList.remove('dragging');
+
       dragId = '';
       dragCat = '';
+      dragScId = '';
+      dragScBlock = false;
     });
 
     $('#groups').addEventListener('dragover', function (e) {
       if (!sorting) return;
       if (dragCat && e.target.closest('.group-head')) { e.preventDefault(); return; }
       if (dragId && e.target.closest('.tile')) e.preventDefault();
+      if (dragScId && e.target.closest('.sc-item')) e.preventDefault();
+      if (dragScBlock && e.target.closest('.group-head')) e.preventDefault();
     });
 
     $('#groups').addEventListener('drop', function (e) {
       if (!sorting) return;
       e.preventDefault();
+
+      if (dragScBlock) {
+        var gh = e.target.closest('.group-head');
+        dragScBlock = false;
+        if (!gh) return;
+
+        var idx = categories().list.indexOf(gh.dataset.cat);
+        if (idx > -1) moveScBlock(idx);
+        return;
+      }
+
+      if (dragScId) {
+        var target = e.target.closest('.sc-item');
+        var fromId = dragScId;
+        dragScId = '';
+        if (target && target.dataset.id !== fromId) moveScItem(fromId, target.dataset.id);
+        return;
+      }
 
       if (dragCat) {
         var head = e.target.closest('.group-head');

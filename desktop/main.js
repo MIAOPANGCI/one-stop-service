@@ -1083,13 +1083,70 @@ ipcMain.handle('portal:pick-app', async () => {
   if (r.canceled || !r.filePaths || !r.filePaths[0]) return null;
 
   const file = r.filePaths[0];
+  let iconFile = file;
   let icon = '';
-  try {
-    const img = await app.getFileIcon(file, { size: 'large' });
-    icon = img.isEmpty() ? '' : img.toDataURL();
-  } catch (err) {}
+
+  // .lnk 直接取图标只会拿到「快捷方式」那个白纸图标，得先读出它指向谁
+  if (/\.lnk$/i.test(file)) {
+    try {
+      const sc = shell.readShortcutLink(file);
+      if (sc) {
+        if (sc.icon) {
+          const iconPath_ = String(sc.icon).split(',')[0].replace(/^"|"$/g, '');
+          if (iconPath_) iconFile = iconPath_;
+        } else if (sc.target) {
+          iconFile = sc.target;
+        }
+      }
+    } catch (err) {}
+  }
+
+  for (const candidate of [iconFile, file]) {
+    try {
+      const img = await app.getFileIcon(candidate, { size: 'large' });
+      if (!img.isEmpty()) { icon = img.toDataURL(); break; }
+    } catch (err) {}
+  }
 
   return { path: file, name: path.basename(file).replace(/\.[^.]+$/, ''), icon: icon };
+});
+
+/* 已有快捷方式的图标修复：老数据存的是「白纸」图标，按路径重新取一次 */
+ipcMain.handle('portal:icons', async (e, list) => {
+  const items = Array.isArray(list) ? list.slice(0, 40) : [];
+  const out = [];
+
+  for (const it of items) {
+    const file = String((it && it.path) || '');
+    if (!file) { out.push(''); continue; }
+
+    let iconFile = file;
+    if (/\.lnk$/i.test(file)) {
+      try {
+        const sc = shell.readShortcutLink(file);
+        if (sc) {
+          if (sc.icon) {
+            const p = String(sc.icon).split(',')[0].replace(/^"|"$/g, '');
+            if (p) iconFile = p;
+          } else if (sc.target) {
+            iconFile = sc.target;
+          }
+        }
+      } catch (err) {}
+    }
+
+    let data = '';
+    for (const cand of [iconFile, file]) {
+      try {
+        const img = await app.getFileIcon(cand, { size: 'large' });
+        if (!img.isEmpty()) { data = img.toDataURL(); break; }
+      } catch (err) {}
+    }
+
+    out.push(data);
+  }
+
+  return out;
 });
 
 ipcMain.handle('portal:open-path', async (e, target) => {

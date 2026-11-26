@@ -39,6 +39,10 @@ contextBridge.exposeInMainWorld('desktopAPI', {
     return ipcRenderer.invoke('portal:pick-app');
   },
 
+  iconsFor(list) {
+    return ipcRenderer.invoke('portal:icons', Array.isArray(list) ? list : []);
+  },
+
   openPath(target) {
     return ipcRenderer.invoke('portal:open-path', String(target || ''));
   },
