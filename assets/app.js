@@ -666,6 +666,7 @@
   function buildPicker(keyword) {
     var box = $('#tabPickList');
     if (!box) return;
+
     var kw = String(keyword || '').trim().toLowerCase();
 
     var groups = {};
@@ -682,7 +683,9 @@
     });
 
     if (!order.length) {
-      box.innerHTML = '<div class="pick-empty">没有匹配的服务</div>';
+      box.innerHTML = kw
+        ? '<div class="pick-empty">没有匹配的服务</div>'
+        : '<div class="pick-empty">还没有服务，先去添加一个</div>';
       return;
     }
 
@@ -692,17 +695,21 @@
       var items = groups[cat].map(function (l) {
         var url = pickUrl(l).url;
         var raw = (l.icon || '').trim();
-        var ico = /^(\/|https?:\/\/)/i.test(raw)
+        var ico = /^(\/|https?:\/\/|data:image\/)/i.test(raw)
           ? '<img src="' + esc(raw) + '" alt="">'
           : esc(raw || (l.name || '?').slice(0, 1));
+
         return '<button class="pick-item" type="button" data-link="' + esc(l.id) + '"' +
           (url ? '' : ' disabled') + (l.noFrame ? ' title="在新标签页打开"' : '') +
           '><i class="pick-ico">' + ico + '</i>' +
           '<span>' + esc(l.name) + '</span>' +
           (l.noFrame ? '<i class="pick-ext">↗</i>' : '') + '</button>';
       }).join('');
+
       return '<div class="pick-cat">' + esc(cat) + '</div>' + items;
     }).join('');
+
+    box.innerHTML = parts;
   }
 
   function showPicker() {
