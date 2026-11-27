@@ -3376,6 +3376,12 @@ html[data-theme="dark"] .probe-res.warn { color: #ff9ba2; }
 .tabhost[hidden] { display: none !important; }
 
 body.has-tabs { --tab-h: 46px; }
+
+/* 看着某个外部页签时，把首页的滚动锁住：
+   不然鼠标在页面上滚，滚动会「穿透」到下面的门户，切回门户时位置全变了 */
+body.tab-foreign { overflow: hidden; }
+/* body 上的 overflow 拦不住滚轮穿透，根元素一起锁 */
+html:has(body.tab-foreign) { overflow: hidden; }
 body.has-tabs .nav { top: var(--tab-h); }
 .nav { transition: top .3s var(--ease); }
 
@@ -3545,6 +3551,7 @@ body.has-tabs .nav { top: var(--tab-h); }
 
 .tabframes {
   position: fixed;
+  overscroll-behavior: none;
   top: var(--tab-h, 48px);
   left: 0;
   right: 0;

@@ -508,10 +508,17 @@
     var show = tabs.length > 0;
     host.hidden = !show;
     document.body.classList.toggle('has-tabs', show);
-    if (!show) { $('#tabFrames').innerHTML = ''; return; }
+    if (!show) {
+      document.body.classList.remove('tab-foreign');
+      $('#tabFrames').innerHTML = '';
+      return;
+    }
 
     if (activeId !== 0 && !findTab(activeId)) activeId = 0;
     var homeOn = activeId === 0;
+
+    // 在外部页签上时锁住 body 滚动（门户自己可以滚）
+    document.body.classList.toggle('tab-foreign', !homeOn);
 
     var homeIco = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' +
       '<path d="M3.5 10.6 12 3.6l8.5 7"></path><path d="M5.8 9.6V20h12.4V9.6"></path></svg>';
