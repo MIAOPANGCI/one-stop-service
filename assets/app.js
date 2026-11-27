@@ -674,8 +674,8 @@
 
     (state.links || []).forEach(function (l) {
       if (kw) {
-        var hay = [l.name, l.desc, l.cat].join(' ').toLowerCase();
-        if (hay.indexOf(kw) === -1) return;
+        var hay = [l.name, l.desc, l.cat].join(' ');
+        if (!hitText(hay, kw, pyKeys(l.name + ' ' + (l.cat || '') + ' ' + (l.desc || '')))) return;
       }
       var cat = l.cat || '未分类';
       if (!groups[cat]) { groups[cat] = []; order.push(cat); }
@@ -684,7 +684,7 @@
 
     var scHit = DESKTOP && authUser && (state.shortcuts || []).some(function (it) {
       if (!kw) return true;
-      return String(it.name || '').toLowerCase().indexOf(kw) > -1;
+      return hitText(it.name, kw, pyKeys(it.name));
     });
 
     if (!order.length && !scHit) {
@@ -718,7 +718,7 @@
     if (DESKTOP && authUser && (state.shortcuts || []).length) {
       var scs = state.shortcuts.filter(function (it) {
         if (!kw) return true;
-        return String(it.name || '').toLowerCase().indexOf(kw) > -1;
+        return hitText(it.name, kw, pyKeys(it.name));
       });
 
       if (scs.length) {
@@ -928,12 +928,66 @@
     $('#svcCount').textContent = '共 ' + state.links.length + ' 个服务 · ' + c.list.length + ' 个分类';
   }
 
+  /* ---------------- 拼音检索 ---------------- */
+  var PY_MAP = null;
+  var PY_CACHE = {};
+
+  function pyMap() {
+    if (PY_MAP) return PY_MAP;
+
+    PY_MAP = {};
+    String(window.PINYIN_DATA || '').split('、').forEach(function (cell) {
+      if (cell.length > 1) PY_MAP[cell.charAt(0)] = cell.slice(1);
+    });
+
+    return PY_MAP;
+  }
+
+  /* 中文→全拼 + 首字母。英文数字原样保留，标点丢掉 */
+  function pyKeys(text) {
+    var src = String(text || '').toLowerCase();
+
+    if (PY_CACHE[src]) return PY_CACHE[src];
+
+    var map = pyMap();
+    var full = '';
+    var ini = '';
+
+    for (var i = 0; i < src.length; i++) {
+      var ch = src.charAt(i);
+
+      if (/[a-z0-9]/.test(ch)) { full += ch; ini += ch; continue; }
+
+      var py = map[ch];
+      if (py) { full += py; ini += py.charAt(0); }
+    }
+
+    var out = { full: full, ini: ini };
+    if (Object.keys(PY_CACHE).length > 2000) PY_CACHE = {};   // 别无限涨
+    PY_CACHE[src] = out;
+
+    return out;
+  }
+
+  /* 关键词命中：原文包含，或者（纯字母数字时）拼音包含 */
+  function hitText(text, kw, keys) {
+    if (!kw) return true;
+    if (String(text || '').toLowerCase().indexOf(kw) > -1) return true;
+
+    if (!keys || !/^[a-z0-9]+$/.test(kw)) return false;
+
+    return keys.full.indexOf(kw) > -1 || keys.ini.indexOf(kw) > -1;
+  }
+
   function filtered() {
     var kw = keyword.trim().toLowerCase();
+
     return state.links.filter(function (l) {
       if (activeCat !== '全部' && (l.cat || '未分类') !== activeCat) return false;
       if (!kw) return true;
-      return [l.name, l.desc, l.cat, l.urlLan, l.urlWan].join(' ').toLowerCase().indexOf(kw) > -1;
+
+      var text = [l.name, l.desc, l.cat, l.urlLan, l.urlWan].join(' ');
+      return hitText(text, kw, pyKeys(l.name + ' ' + (l.cat || '') + ' ' + (l.desc || '')));
     });
   }
 
