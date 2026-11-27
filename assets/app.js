@@ -682,7 +682,12 @@
       groups[cat].push(l);
     });
 
-    if (!order.length) {
+    var scHit = DESKTOP && authUser && (state.shortcuts || []).some(function (it) {
+      if (!kw) return true;
+      return String(it.name || '').toLowerCase().indexOf(kw) > -1;
+    });
+
+    if (!order.length && !scHit) {
       box.innerHTML = kw
         ? '<div class="pick-empty">没有匹配的服务</div>'
         : '<div class="pick-empty">还没有服务，先去添加一个</div>';
@@ -691,7 +696,7 @@
 
     order = sortCatNames(order);
 
-    var parts = order.map(function (cat) {
+    var parts = (order.length ? order : []).map(function (cat) {
       var items = groups[cat].map(function (l) {
         var url = pickUrl(l).url;
         var raw = (l.icon || '').trim();
@@ -708,6 +713,28 @@
 
       return '<div class="pick-cat">' + esc(cat) + '</div>' + items;
     }).join('');
+
+    // 本机快捷方式也放进来，选一下就能直接开程序
+    if (DESKTOP && authUser && (state.shortcuts || []).length) {
+      var scs = state.shortcuts.filter(function (it) {
+        if (!kw) return true;
+        return String(it.name || '').toLowerCase().indexOf(kw) > -1;
+      });
+
+      if (scs.length) {
+        parts += '<div class="pick-cat">快捷方式</div>' + scs.map(function (it) {
+          var ico = it.icon
+            ? '<img src="' + esc(it.icon) + '" alt="">'
+            : esc((it.name || '?').slice(0, 1));
+
+          return '<button class="pick-item" type="button" data-sc="' + esc(it.id) + '"' +
+            ' title="' + esc(it.path) + '">' +
+            '<i class="pick-ico">' + ico + '</i>' +
+            '<span>' + esc(it.name) + '</span>' +
+            '<i class="pick-ext">↗</i></button>';
+        }).join('');
+      }
+    }
 
     box.innerHTML = parts;
   }
@@ -3344,6 +3371,16 @@
 
     $('#tabPick').addEventListener('click', function (e) {
       if (e.target.closest('#tabPickSearch')) return;
+
+      var sb = e.target.closest('[data-sc]');
+      if (sb) {
+        var sid = sb.getAttribute('data-sc');
+        var sc = (state.shortcuts || []).filter(function (x) { return x.id === sid; })[0];
+        hidePicker();
+        if (sc) runShortcut(sc);
+        return;
+      }
+
       var b = e.target.closest('[data-link]');
       if (!b) return;
       var id = b.getAttribute('data-link');

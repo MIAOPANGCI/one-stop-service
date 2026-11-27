@@ -231,7 +231,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
-      spellcheck: false
+      spellcheck: false,
+      // 收进托盘时别让渲染进程被节流暂停，否则回来可能是一块白屏
+      backgroundThrottling: false
     }
   });
 
@@ -273,10 +275,29 @@ function createWindow() {
 
 /* ---------------- 托盘 / 关闭行为 ---------------- */
 
+let hiddenFromMinimized = false;
+
 function showMain() {
   if (win && !win.isDestroyed()) {
     if (win.isMinimized()) win.restore();
     if (!win.isVisible()) win.show();
+
+    // 从「最小化 → 收进托盘」这条路回来的，窗口常常是白的：
+    // 改一下尺寸能强制重绘，用户基本看不出来
+    if (hiddenFromMinimized) {
+      hiddenFromMinimized = false;
+      setTimeout(() => {
+        if (!win || win.isDestroyed()) return;
+        try {
+          const b = win.getBounds();
+          win.setBounds({ x: b.x, y: b.y, width: b.width, height: b.height + 1 });
+          setTimeout(() => {
+            try { win.setBounds(b); } catch (e) {}
+          }, 60);
+        } catch (e) {}
+      }, 30);
+    }
+
     win.moveTop();
     win.focus();
 
@@ -328,7 +349,16 @@ function ensureTray() {
 
 function hideToTray() {
   if (!ensureTray()) { quitting = true; app.quit(); return; }
-  if (win && !win.isDestroyed()) win.hide();
+
+  if (win && !win.isDestroyed()) {
+    // 最小化状态下直接 hide，之后 show 出来会是一整块白屏（Electron 的老毛病），
+    // 先把窗口恢复正常再收起来
+    if (win.isMinimized()) {
+      hiddenFromMinimized = true;
+      try { win.restore(); } catch (e) {}
+    }
+    win.hide();
+  }
 
   // 头一次收进托盘提示一句，免得以为关掉了
   if (!prefs.trayHinted) {
