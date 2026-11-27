@@ -373,8 +373,12 @@
     }
 
     var mode = state.settings.openMode || (state.settings.openInNewTab === false ? 'same' : 'new');
+
+    // 站内页签靠 iframe/webview 内嵌，浏览器里外站基本都会被 X-Frame-Options 拦掉，
+    // 所以网页版一律新开浏览器标签，只有客户端里才用站内页签
     if (mode === 'tab') {
-      openTab(link.name, r.url);
+      if (DESKTOP) { openTab(link.name, r.url); return; }
+      openInNewTab(r.url);
       return;
     }
     if (mode === 'same') { location.href = r.url; return; }
@@ -3449,7 +3453,7 @@
       (state.links || []).forEach(function (x) { if (x.id === id) l = x; });
       if (!l) return;
       var u = pickUrl(l).url;
-      if (l.noFrame && !DESKTOP) { openInNewTab(u); hidePicker(); return; }
+      if (!DESKTOP || l.noFrame) { openInNewTab(u); hidePicker(); return; }
       openTab(l.name, u);
     });
 
